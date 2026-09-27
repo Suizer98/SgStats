@@ -1,0 +1,44 @@
+[project]
+name = "sgstats"
+version = "0.1.0"
+description = "Agentic policy briefing API"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.115.6",
+  "uvicorn[standard]==0.34.0",
+  "httpx==0.28.1",
+  "pandas==2.2.3",
+  "python-dotenv==1.0.1",
+  "langchain==0.3.14",
+  "langchain-core==0.3.29",
+  "langchain-openai==0.3.0",
+  "pydantic==2.10.4",
+  "sqlalchemy==2.0.36",
+  "psycopg[binary]==3.2.4",
+  "pgvector==0.3.6",
+  "langgraph==0.2.62",
+  "openpyxl==3.1.5",
+]
+
+[dependency-groups]
+dev = [
+  "pytest==8.3.4",
+  "pytest-asyncio==0.25.0",
+  "pytest-cov==6.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["app"]
+
+[tool.coverage.report]
+show_missing = false
+skip_covered = false
+
+[tool.uv]
+package = false

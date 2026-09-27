@@ -1,0 +1,15 @@
+.venv
+__pycache__
+.pytest_cache
+*.db
+.env
+node_modules
+dist
+.DS_Store
+.coverage
+coverage.xml
+test-results.xml
+htmlcov
+bifrost/logs
+bifrost/logs.db*
+backend/data/*.partial.npz

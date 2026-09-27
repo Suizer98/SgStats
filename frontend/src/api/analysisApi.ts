@@ -1,0 +1,62 @@
+import type {
+  AnalysisRow,
+  CreatedAnalysis,
+} from "../types/analysis";
+
+async function parseResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    throw new Error((await response.text()) || "Request failed");
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function createAnalysis(
+  query: string,
+  conversationId: string | null,
+): Promise<CreatedAnalysis> {
+  const response = await fetch("/api/analyses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query,
+      conversation_id: conversationId,
+    }),
+  });
+  return parseResponse<CreatedAnalysis>(response);
+}
+
+export async function fetchAnalyses(): Promise<AnalysisRow[]> {
+  const response = await fetch("/api/analyses");
+  return parseResponse<AnalysisRow[]>(response);
+}
+
+export async function deleteAnalysis(id: string): Promise<void> {
+  const response = await fetch(`/api/analyses/${id}`, { method: "DELETE" });
+  await parseResponse(response);
+}
+
+export async function clearAnalyses(): Promise<void> {
+  const response = await fetch("/api/analyses", { method: "DELETE" });
+  await parseResponse(response);
+}
+
+export async function fetchAnalysis(id: string): Promise<AnalysisRow> {
+  const response = await fetch(`/api/analyses/${id}`);
+  return parseResponse<AnalysisRow>(response);
+}
+
+export async function fetchHealth(): Promise<boolean> {
+  try {
+    const response = await fetch("/api/health");
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function analysisSocket(id: string): WebSocket {
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  return new WebSocket(
+    `${protocol}://${window.location.host}/ws/analyses/${id}`,
+  );
+}

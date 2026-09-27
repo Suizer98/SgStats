@@ -1,0 +1,11 @@
+/* Tailwind utilities only. Preflight is omitted so Chakra's CSS reset stays authoritative.
+   Importing the layer files directly skips v4 auto source detection, so scan src explicitly. */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source ".";
+
+/* Chakra puts .chakra-ui-dark on body, so Tailwind's dark: variant follows the same toggle. */
+@custom-variant dark (&:where(.chakra-ui-dark, .chakra-ui-dark *));

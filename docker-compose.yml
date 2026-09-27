@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: sgstats
+      POSTGRES_PASSWORD: sgstats
+      POSTGRES_DB: sgstats
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgstats -d sgstats"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  gov-mcp:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    ports:
+      - "8100:8100"
+    env_file:
+      - .env
+    environment:
+      FETCH_TIMEOUT: "12"
+      DATABASE_URL: postgresql+psycopg://sgstats:sgstats@postgres:5432/sgstats
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bifrost:
+    image: maximhq/bifrost
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
+      BIFROST_ENCRYPTION_KEY: ${BIFROST_ENCRYPTION_KEY:-sgstats-local-bifrost-key-32bytes!!}
+    volumes:
+      - ./bifrost:/app/data
+
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://sgstats:sgstats@postgres:5432/sgstats
+      MCP_URL: http://gov-mcp:8100
+      BIFROST_URL: http://bifrost:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gov-mcp:
+        condition: service_started
+      bifrost:
+        condition: service_started
+
+  web:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - web_node_modules:/app/node_modules
+    environment:
+      API_PROXY: http://api:8000
+      CHOKIDAR_USEPOLLING: "true"
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  web_node_modules:
