@@ -17,6 +17,7 @@ import {
 } from "@chakra-ui/react";
 
 import { useAnalysisStore } from "../store/analysisStore";
+import type { Conversation } from "../types/analysis";
 import { relativeTime } from "../utils/format";
 
 function statusColor(status: string): string {
@@ -25,10 +26,16 @@ function statusColor(status: string): string {
   return "blue";
 }
 
+function threadStatus(thread: Conversation): string {
+  if (thread.analyses.some((row) => row.status === "running")) return "running";
+  const latest = thread.analyses[thread.analyses.length - 1];
+  return latest?.status ?? "done";
+}
+
 export function HistoryPanel({ onOpenItem }: { onOpenItem?: () => void }) {
   const history = useAnalysisStore((state) => state.history);
   const filter = useAnalysisStore((state) => state.historyFilter);
-  const activeId = useAnalysisStore((state) => state.activeId);
+  const conversationId = useAnalysisStore((state) => state.conversationId);
   const setHistoryFilter = useAnalysisStore((state) => state.setHistoryFilter);
   const openHistory = useAnalysisStore((state) => state.openHistory);
   const deleteHistory = useAnalysisStore((state) => state.deleteHistory);
@@ -36,15 +43,18 @@ export function HistoryPanel({ onOpenItem }: { onOpenItem?: () => void }) {
   const confirmClear = useDisclosure();
   const cancelRef = useRef<HTMLButtonElement>(null);
 
-  const rows = history.filter((row) =>
-    row.query.toLowerCase().includes(filter.trim().toLowerCase()),
-  );
+  const needle = filter.trim().toLowerCase();
+  const threads = history.filter((thread) => {
+    if (!needle) return true;
+    if (thread.title.toLowerCase().includes(needle)) return true;
+    return thread.analyses.some((row) => row.query.toLowerCase().includes(needle));
+  });
 
   return (
     <>
       <Stack spacing={3}>
         <Text fontSize="sm" color="fg.muted">
-          {history.length} saved analyses
+          {history.length} saved {history.length === 1 ? "thread" : "threads"}
         </Text>
         <Flex gap={2}>
           <Input
@@ -66,53 +76,66 @@ export function HistoryPanel({ onOpenItem }: { onOpenItem?: () => void }) {
         </Flex>
 
         <Stack spacing={2} maxH="calc(100vh - 220px)" overflowY="auto" pr={1}>
-          {rows.map((row) => (
-            <Box
-              key={row.id}
-              textAlign="left"
-              borderWidth="1px"
-              borderColor={row.id === activeId ? "border.accent" : "border.subtle"}
-              bg={row.id === activeId ? "bg.active" : "bg.surface"}
-              rounded="md"
-              p={3}
-              cursor="pointer"
-              onClick={() => {
-                void openHistory(row.id);
-                onOpenItem?.();
-              }}
-              _hover={{ borderColor: "border.accent" }}
-            >
-              <Flex align="flex-start" justify="space-between" gap={2}>
-                <Text fontSize="sm" fontWeight="medium" noOfLines={2}>
-                  {row.query}
-                </Text>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  flexShrink={0}
-                  isDisabled={row.status === "running"}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void deleteHistory(row.id);
-                  }}
-                >
-                  Delete
-                </Button>
-              </Flex>
-              <Flex align="center" gap={2} mt={2}>
-                <Badge colorScheme={statusColor(row.status)}>{row.status}</Badge>
-                <Badge variant="outline" title={row.conversation_id}>
-                  {row.conversation_id?.slice(0, 8)}
-                </Badge>
-                <Text fontSize="xs" color="fg.muted">
-                  {relativeTime(row.created_at)}
-                </Text>
-              </Flex>
-            </Box>
-          ))}
-          {rows.length === 0 && (
+          {threads.map((thread) => {
+            const latest = thread.analyses[thread.analyses.length - 1];
+            const status = threadStatus(thread);
+            const open = thread.id === conversationId;
+            return (
+              <Box
+                key={thread.id}
+                textAlign="left"
+                borderWidth="1px"
+                borderColor={open ? "border.accent" : "border.subtle"}
+                bg={open ? "bg.active" : "bg.surface"}
+                rounded="md"
+                p={3}
+                cursor="pointer"
+                onClick={() => {
+                  void openHistory(thread.id);
+                  onOpenItem?.();
+                }}
+                _hover={{ borderColor: "border.accent" }}
+              >
+                <Flex align="flex-start" justify="space-between" gap={2}>
+                  <Text fontSize="sm" fontWeight="medium" noOfLines={2}>
+                    {thread.title}
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    flexShrink={0}
+                    isDisabled={status === "running"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void deleteHistory(thread.id);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </Flex>
+                {thread.analyses.length > 1 && latest && latest.query !== thread.title && (
+                  <Text fontSize="xs" color="fg.muted" noOfLines={1} mt={1}>
+                    Latest: {latest.query}
+                  </Text>
+                )}
+                <Flex align="center" gap={2} mt={2}>
+                  <Badge colorScheme={statusColor(status)}>{status}</Badge>
+                  {thread.analyses.length > 1 && (
+                    <Badge variant="subtle">{thread.analyses.length} messages</Badge>
+                  )}
+                  <Badge variant="outline" title={thread.id}>
+                    {thread.id.slice(0, 8)}
+                  </Badge>
+                  <Text fontSize="xs" color="fg.muted">
+                    {relativeTime(thread.updated_at)}
+                  </Text>
+                </Flex>
+              </Box>
+            );
+          })}
+          {threads.length === 0 && (
             <Text fontSize="sm" color="fg.muted">
-              {history.length === 0 ? "No runs yet." : "No matching runs."}
+              {history.length === 0 ? "No threads yet." : "No matching threads."}
             </Text>
           )}
         </Stack>

@@ -336,6 +336,26 @@ def save_source_chunks(analysis_id: str, datasets: list[dict]) -> None:
         db.close()
 
 
+def delete_conversation(conversation_id: str) -> bool:
+    db = get_session()
+    try:
+        conversation = db.get(Conversation, conversation_id)
+        if not conversation:
+            return False
+        rows = db.query(Analysis).filter(Analysis.conversation_id == conversation_id).all()
+        if any(row.status == "running" for row in rows):
+            raise ValueError("This analysis is still running.")
+        for row in rows:
+            db.query(AgentEvent).filter(AgentEvent.analysis_id == row.id).delete()
+            db.query(SourceChunk).filter(SourceChunk.analysis_id == row.id).delete()
+            db.delete(row)
+        db.delete(conversation)
+        db.commit()
+        return True
+    finally:
+        db.close()
+
+
 def delete_analysis(analysis_id: str) -> bool:
     db = get_session()
     try:

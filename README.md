@@ -6,7 +6,6 @@ Further reading:
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) for the system design and agent workflow
 - [DATA_SOURCES.md](DATA_SOURCES.md) for the sources, formats and cleaning rules
-- [TESTING.md](TESTING.md) for the test plan, hallucination checks and results
 
 ## Overview
 
@@ -106,13 +105,13 @@ python3 scripts/smoke.py "Analyse employment trends in the technology sector fro
 cd scripts && python3 smoke_all.py   # all sample queries with a verdict each
 ```
 
-## Running tests
+## Testing
 
 ```bash
 cd backend
 uv sync
-uv run pytest                          # 102 tests, about 10 seconds, no network or keys needed
-uv run pytest --cov --cov-report=term  # with coverage (80%)
+uv run pytest                          # about 10 seconds, no network or keys needed
+uv run pytest --cov --cov-report=term  # with coverage (about 80%)
 LIVE_LLM_URL=http://localhost:8080 GEMINI_MODEL=gemini-3.5-flash GROQ_MODEL=openai/gpt-oss-120b \
   uv run pytest tests/test_llm.py -k live   # optional check against a running Bifrost
 
@@ -120,7 +119,21 @@ cd ../frontend
 npm run typecheck && npm run build
 ```
 
-CI runs the same backend and frontend checks plus a `docker compose build` on every push and pull request (`.github/workflows/ci.yml`). [TESTING.md](TESTING.md) explains the test plan and the hallucination checks.
+| File | What is covered |
+| --- | --- |
+| `test_core.py` | Query and period parsing, normalisers, catalog and vector search, MCP client, snapshot fallback |
+| `test_analytics.py` | Hand-calculated per-cent change, Pearson correlation, cross-dataset alignment, Excel source |
+| `test_quality.py` | Duplicates, nulls, required columns, outliers, coverage notes, every real snapshot |
+| `test_llm.py` | Hallucination detection, structured output, revision loop, consistency, provider fallback |
+| `test_agents.py` | Full agent graph, replan after failed fetch, revise, search outage, chat routing |
+| `test_api.py` | Validation, background jobs, WebSocket replay, conversations and history |
+| `test_performance.py` | 10,000-row normalise and summarise, 40 concurrent API requests |
+
+Tests use a temporary SQLite database with foreign keys enforced, and fake the government APIs, MCP service and LLM gateway at the module boundary, so the real parsing, statistics, graph routing and grounding code runs.
+
+Every briefing is checked by `check_grounding` before it is shown: each number in the text must match a computed fact, allowing for rounding, unit scales and sign. Years, ranges and numbers inside series labels are not treated as claims. A failed check triggers one revision that lists the unsupported numbers, then falls back to a template briefing built only from the facts.
+
+End-to-end runs of the sample queries below, plus a gov-mcp outage, all completed in 17 to 34 seconds with grounding passed. CI runs the backend and frontend checks plus `docker compose build` on every push and pull request (`.github/workflows/ci.yml`).
 
 ## Sample queries
 

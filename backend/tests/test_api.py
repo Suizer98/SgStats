@@ -113,8 +113,33 @@ def test_history_lists_conversations():
 def test_unknown_resources_return_404():
     assert client.get("/api/analyses/missing").status_code == 404
     assert client.get("/api/conversations/missing").status_code == 404
+    assert client.delete("/api/conversations/missing").status_code == 404
     response = client.post("/api/analyses", json={"query": "q", "conversation_id": "missing"})
     assert response.status_code == 404
+
+
+def test_delete_conversation_removes_every_turn():
+    with TestClient(app) as live:
+        first = live.post("/api/analyses", json={"query": "Analyse employment"}).json()
+        conversation_id = first["conversation_id"]
+        wait_for(live, first["id"])
+        second = live.post(
+            "/api/analyses",
+            json={"query": "How are you today?", "conversation_id": conversation_id},
+        ).json()
+        wait_for(live, second["id"])
+        listed = live.get("/api/conversations").json()
+        thread = next(item for item in listed if item["id"] == conversation_id)
+        assert len(thread["analyses"]) == 2
+        assert live.delete(f"/api/conversations/{conversation_id}").status_code == 200
+        assert live.get(f"/api/conversations/{conversation_id}").status_code == 404
+        assert live.get(f"/api/analyses/{first['id']}").status_code == 404
+        assert live.get(f"/api/analyses/{second['id']}").status_code == 404
+
+
+def test_running_conversation_cannot_be_deleted():
+    conversation_id = store.create_analysis("live-thread", "Analyse employment")
+    assert client.delete(f"/api/conversations/{conversation_id}").status_code == 409
 
 
 def test_invalid_body_returns_422():

@@ -1,5 +1,6 @@
 import type {
   AnalysisRow,
+  Conversation,
   CreatedAnalysis,
 } from "../types/analysis";
 
@@ -28,6 +29,21 @@ export async function createAnalysis(
 export async function fetchAnalyses(): Promise<AnalysisRow[]> {
   const response = await fetch("/api/analyses");
   return parseResponse<AnalysisRow[]>(response);
+}
+
+export async function fetchConversations(): Promise<Conversation[]> {
+  const response = await fetch("/api/conversations");
+  return parseResponse<Conversation[]>(response);
+}
+
+export async function fetchConversation(id: string): Promise<Conversation> {
+  const response = await fetch(`/api/conversations/${id}`);
+  return parseResponse<Conversation>(response);
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const response = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+  await parseResponse(response);
 }
 
 export async function deleteAnalysis(id: string): Promise<void> {

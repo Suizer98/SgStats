@@ -67,6 +67,22 @@ def get_conversation(conversation_id: str):
     return row
 
 
+@app.delete("/api/conversations/{conversation_id}")
+def remove_conversation(conversation_id: str):
+    row = store.get_conversation(conversation_id)
+    if not row:
+        raise HTTPException(404, "Not found")
+    if any(item["id"] in jobs or item["status"] == "running" for item in row["analyses"]):
+        raise HTTPException(409, "This analysis is still running.")
+    try:
+        deleted = store.delete_conversation(conversation_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not deleted:
+        raise HTTPException(404, "Not found")
+    return {"deleted": conversation_id}
+
+
 @app.delete("/api/analyses/{analysis_id}")
 def remove_analysis(analysis_id: str):
     if analysis_id in jobs:

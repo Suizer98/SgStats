@@ -4,9 +4,10 @@ import {
   analysisSocket,
   clearAnalyses,
   createAnalysis,
-  deleteAnalysis,
-  fetchAnalyses,
+  deleteConversation,
   fetchAnalysis,
+  fetchConversation,
+  fetchConversations,
   fetchHealth,
 } from "../api/analysisApi";
 import { sampleQuery } from "../constants";
@@ -14,6 +15,7 @@ import type {
   AgentEvent,
   AnalysisResult,
   AnalysisRow,
+  Conversation,
 } from "../types/analysis";
 import { downloadFile, parseTimestamp, toCsv, toMarkdown } from "../utils/format";
 
@@ -28,7 +30,7 @@ type AnalysisState = {
   chatId: string | null;
   analysisId: string | null;
   resultTab: ResultTab;
-  history: AnalysisRow[];
+  history: Conversation[];
   historyFilter: string;
   activeId: string | null;
   conversationId: string | null;
@@ -89,25 +91,55 @@ function storedResult(result: AnalysisResult, id: string): Partial<AnalysisState
   return { result, analysisResult: result, analysisId: id, resultTab: "analysis" };
 }
 
-function applyLoaded(row: AnalysisRow, set: Setter, get: Getter): void {
-  const running = row.status === "running";
+function threadResults(analyses: AnalysisRow[]): {
+  chatResult: AnalysisResult | null;
+  chatId: string | null;
+  analysisResult: AnalysisResult | null;
+  analysisId: string | null;
+} {
+  let chatResult: AnalysisResult | null = null;
+  let chatId: string | null = null;
+  let analysisResult: AnalysisResult | null = null;
+  let analysisId: string | null = null;
+  for (const row of analyses) {
+    if (!row.result) continue;
+    if (row.result.kind === "chat") {
+      chatResult = row.result;
+      chatId = row.id;
+    } else {
+      analysisResult = row.result;
+      analysisId = row.id;
+    }
+  }
+  return { chatResult, chatId, analysisResult, analysisId };
+}
+
+function applyThread(conversation: Conversation, focus: AnalysisRow, set: Setter, get: Getter): void {
+  const analyses = conversation.analyses.map((row) => (row.id === focus.id ? focus : row));
+  const picked = threadResults(analyses);
+  const completed = [...analyses].reverse().find((row) => row.result);
+  const shown = focus.result ? focus : completed;
+  const resultTab = shown?.result?.kind === "chat" ? "chat" : shown?.result ? "analysis" : "chat";
+  const running = focus.status === "running";
   const current = get();
   set({
-    query: row.query,
+    query: focus.query,
     events:
-      row.id === current.activeId && row.events.length < current.events.length
+      focus.id === current.activeId && focus.events.length < current.events.length
         ? current.events
-        : row.events,
-    ...(row.result ? storedResult(row.result, row.id) : {}),
-    activeId: row.id,
-    conversationId: row.conversation_id,
+        : focus.events,
+    ...picked,
+    result: shown?.result ?? null,
+    resultTab,
+    activeId: focus.id,
+    conversationId: conversation.id,
     busy: running,
     startedAt: running
-      ? parseTimestamp(row.created_at)?.getTime() ?? current.startedAt
+      ? parseTimestamp(focus.created_at)?.getTime() ?? current.startedAt
       : null,
-    error: row.status === "failed" ? row.error || "Analysis failed." : "",
+    error: focus.status === "failed" ? focus.error || "Analysis failed." : "",
   });
-  if (running) attachSocket(row.id, set, get);
+  if (running) attachSocket(focus.id, set, get);
   else activeSocket?.close();
 }
 
@@ -195,7 +227,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   loadHistory: async () => {
     try {
-      set({ history: await fetchAnalyses() });
+      set({ history: await fetchConversations() });
     } catch {
       set({ error: "Could not load analysis history." });
     }
@@ -203,8 +235,29 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   openHistory: async (id) => {
     try {
-      const row = await fetchAnalysis(id);
-      applyLoaded(row, set, get);
+      const conversation = await fetchConversation(id);
+      const analyses = conversation.analyses;
+      const running = [...analyses].reverse().find((row) => row.status === "running");
+      const latest = analyses[analyses.length - 1];
+      const focusId = (running ?? latest)?.id;
+      if (!focusId) {
+        set({
+          conversationId: conversation.id,
+          activeId: null,
+          events: [],
+          result: null,
+          chatResult: null,
+          analysisResult: null,
+          chatId: null,
+          analysisId: null,
+          resultTab: "chat",
+          busy: false,
+          error: "",
+        });
+        return;
+      }
+      const focus = await fetchAnalysis(focusId);
+      applyThread(conversation, focus, set, get);
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : "Could not load analysis.",
@@ -214,13 +267,8 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   deleteHistory: async (id) => {
     try {
-      await deleteAnalysis(id);
-      const current = get();
-      const clearedChat = current.chatId === id;
-      const clearedAnalysis = current.analysisId === id;
-      const chatResult = clearedChat ? null : current.chatResult;
-      const analysisResult = clearedAnalysis ? null : current.analysisResult;
-      if (current.activeId === id) {
+      await deleteConversation(id);
+      if (get().conversationId === id) {
         activeSocket?.close();
         set({
           activeId: null,
@@ -228,26 +276,18 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           events: [],
           busy: false,
           error: "",
-          chatResult,
-          analysisResult,
-          chatId: clearedChat ? null : current.chatId,
-          analysisId: clearedAnalysis ? null : current.analysisId,
-          result: analysisResult ?? chatResult,
-          resultTab: analysisResult ? "analysis" : "chat",
-        });
-      } else if (clearedChat || clearedAnalysis) {
-        set({
-          chatResult,
-          analysisResult,
-          chatId: clearedChat ? null : current.chatId,
-          analysisId: clearedAnalysis ? null : current.analysisId,
-          result: current.activeId ? current.result : analysisResult ?? chatResult,
+          result: null,
+          chatResult: null,
+          analysisResult: null,
+          chatId: null,
+          analysisId: null,
+          resultTab: "chat",
         });
       }
       set({ history: get().history.filter((row) => row.id !== id) });
     } catch (error) {
       set({
-        error: error instanceof Error ? error.message : "Could not delete that run.",
+        error: error instanceof Error ? error.message : "Could not delete that thread.",
       });
     }
   },
@@ -255,9 +295,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   clearHistory: async () => {
     try {
       await clearAnalyses();
-      const history = await fetchAnalyses();
-      const activeId = get().activeId;
-      if (activeId && !history.some((row) => row.id === activeId)) {
+      const history = await fetchConversations();
+      const conversationId = get().conversationId;
+      if (conversationId && !history.some((row) => row.id === conversationId)) {
         activeSocket?.close();
         set({
           history,
@@ -306,6 +346,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
         conversationId: created.conversation_id,
       });
       attachSocket(created.id, set, get);
+      void get().loadHistory();
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : "Request failed.",
