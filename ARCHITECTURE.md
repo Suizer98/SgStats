@@ -32,23 +32,24 @@ flowchart TB
     subgraph Browser
         ui[React + Chakra + Recharts]
     end
-    subgraph api[api service]
-        rest[REST /api/analyses]
-        ws[WebSocket /ws/analyses/id]
+    subgraph apiBox[api service]
+        rest["REST /api/analyses"]
+        ws["WebSocket /ws/analyses/id"]
         job[Background job thread]
-        graph[LangGraph agent graph]
+        agents[LangGraph agent graph]
         llm[LangChain client]
     end
     ui -- POST query --> rest
     rest -- create task --> job
-    job --> graph
-    graph -- emit events --> ws
+    job --> agents
+    agents -- emit events --> ws
     ws -- live and replayed events --> ui
-    graph --> llm -- /v1/chat/completions --> bifrost[Bifrost]
+    agents --> llm
+    llm -- "/v1/chat/completions" --> bifrost[Bifrost]
     bifrost --> gemini[Gemini]
     bifrost -. on error .-> groq[Groq]
-    graph -- search_datasets / fetch_dataset --> mcp[gov-mcp]
-    mcp --> sources[Data.gov.sg / SingStat / internal Excel]
+    agents -- "search_datasets / fetch_dataset" --> mcp[gov-mcp]
+    mcp --> sources["Data.gov.sg / SingStat / internal Excel"]
     job --> db[(Postgres + pgvector)]
     mcp --> db
 ```

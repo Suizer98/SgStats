@@ -8,6 +8,8 @@ I used Chakra UI because I had been trying to line this up with FormSG, the Open
 
 I used Zustand instead of Redux because it was quicker to learn. One store holds the query, the live agent events and the result. The API returns the chart series, and the page can switch the same data between line, area and bar without another call.
 
+I also exposed the chart as a payload on the analysis result, so the LangChain app can hand over a graph without drawing it. The analytics step fills the periods, series, labels and unit. The page draws that with Recharts.
+
 I used WebSocket because an analysis can take time and I wanted to stream the agent activity while it runs. The events are also stored, so reconnecting to the same analysis replays the earlier steps before continuing with live updates.
 
 ## Backend
