@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.types import Emit
 from app.core import settings, store
-from app.gov import catalog
+from app.gov import catalog, data
 from app.llm.client import complete
 
 
@@ -45,7 +45,62 @@ def thread_outline(history: list[dict]) -> str:
     return "\n".join(lines) or "none"
 
 
+EDIT_CUES = re.compile(
+    r"\b(only|just|focus|instead|without|exclude|remove|limit|update|change|narrow|filter|show|compare|between)\b",
+    re.I,
+)
+
+
+def named_years(query: str) -> list[int]:
+    return sorted({int(item) for item in re.findall(r"\b(?:19|20)\d{2}\b", query)})
+
+
+def wants_edit(query: str) -> bool:
+    return bool(named_years(query) or EDIT_CUES.search(query) or looks_like_data(query))
+
+
+def scope_for_edit(query: str, prior: dict) -> dict:
+    parsed = data.parse_query(query)
+    years = named_years(query)
+    return {
+        "year_from": parsed["year_from"] if years else prior.get("year_from", parsed["year_from"]),
+        "year_to": parsed["year_to"] if years else prior.get("year_to", parsed["year_to"]),
+        "sector": parsed.get("sector") or prior.get("sector"),
+        "notes": ["This updates the previous analysis in this thread. The same datasets were reused."],
+    }
+
+
+def datasets_for_edit(query: str, datasets: list[dict], scope: dict) -> list[dict]:
+    if not named_years(query):
+        return datasets
+    year_from, year_to = scope["year_from"], scope["year_to"]
+    edited = []
+    for dataset in datasets:
+        kept = []
+        for row in dataset.get("records") or []:
+            period = str(row.get("period") or "")
+            if len(period) >= 4 and period[:4].isdigit() and year_from <= int(period[:4]) <= year_to:
+                kept.append(row)
+        if kept:
+            edited.append({**dataset, "records": kept})
+            continue
+        title = dataset.get("title") or "A dataset"
+        scope["notes"].append(f"{title} has no rows for {year_from}-{year_to}, so the saved rows were kept.")
+        edited.append(dataset)
+    return edited
+
+
 def classify(query: str, history: list[dict], emit: Emit) -> str:
+    prior = latest_data_turn(history)
+    if prior and prior.get("datasets") and wants_edit(query):
+        emit("coordinator", "thought", "This thread already has an analysis. Edit that result instead of fetching again.")
+        emit("coordinator", "action", "Reuse the saved datasets and apply the requested change.")
+        return "edit"
+    if prior:
+        emit("coordinator", "thought", "This thread already has an analysis. Answer from that result only.")
+        emit("coordinator", "action", "Hand off the follow-up to the general agent.")
+        return "chat"
+
     kind = "data" if looks_like_data(query) else "chat"
     reason = ""
     try:
@@ -106,9 +161,20 @@ def conversation_history(analysis_id: str) -> list[dict]:
                 "metrics": metrics,
                 "charts": charts,
                 "insights": [str(line) for line in (report.get("insights") or [])[:4]],
+                "datasets": result.get("datasets") or [],
+                "scope": result.get("scope") or {},
+                "plan": result.get("plan") or [],
             }
         )
-    return turns[-6:]
+    kept = turns[-6:]
+    latest = latest_data_turn(kept)
+    for turn in kept:
+        if turn is latest:
+            continue
+        turn.pop("datasets", None)
+        turn.pop("scope", None)
+        turn.pop("plan", None)
+    return kept
 
 
 def latest_data_turn(history: list[dict]) -> dict | None:
@@ -134,14 +200,22 @@ def analysis_block(turn: dict) -> str:
 def converse(query: str, history: list[dict], emit: Emit) -> dict:
     emit("general", "thought", "Reply in plain language. Do not fetch datasets or invent figures.")
     latest = latest_data_turn(history)
-    transcript = "\n".join(f"User: {turn['user']}\nAssistant: {turn['assistant']}" for turn in history) or "none"
+    latest_position = max(
+        (position for position, turn in enumerate(history) if turn.get("kind") == "data"),
+        default=-1,
+    )
+    followups = history[latest_position + 1 :] if latest_position >= 0 else history
+    transcript = "\n".join(
+        f"User: {turn['user']}\nAssistant: {turn['assistant']}" for turn in followups
+    ) or "none"
     try:
         answer = complete(
             system=(
                 "You are the general conversation agent for a Singapore public-data workspace. "
-                "Talk naturally. When the user refers to results, use the latest analysis below, "
-                "which is what they currently see on screen. Use only figures stated there and never invent numbers. "
-                "If they want new statistics, suggest asking a specific question such as employment, CPI, housing or births."
+                "Talk naturally. If a latest analysis is provided, answer only from that analysis. "
+                "Use only figures stated there and never fetch, infer or invent new statistics. "
+                "If the answer is not covered, say so and ask the user to start a New conversation for a new analysis. "
+                "Earlier turns are conversational context, not a source of facts."
             ),
             human="Latest analysis:\n{analysis}\n\nEarlier turns:\n{transcript}\n\nUser: {query}",
             schema=ChatReply,
@@ -153,12 +227,12 @@ def converse(query: str, history: list[dict], emit: Emit) -> dict:
             timeout=12,
             models=settings.fast_chat_model_ids(),
         )
-        message = answer["body"].get("message") or local_reply(query)
+        message = answer["body"].get("message") or local_reply(query, latest)
         provider = answer["provider"]
         usage = answer.get("usage") or {}
         error = ""
     except Exception as failure:
-        message = local_reply(query)
+        message = local_reply(query, latest)
         provider = "local"
         usage = {}
         error = failure.__class__.__name__
@@ -183,7 +257,12 @@ def converse(query: str, history: list[dict], emit: Emit) -> dict:
     }
 
 
-def local_reply(query: str) -> str:
+def local_reply(query: str, latest: dict | None = None) -> str:
+    if latest:
+        return (
+            f"I could not answer that follow-up from the existing analysis of: {latest.get('user', 'this topic')}. "
+            "Start a New conversation if you want me to fetch and analyse different data."
+        )
     text = query.strip()
     if re.search(r"\b(hi|hello|hey|good morning|good afternoon)\b", text, re.I):
         return "Hello. I can chat normally, or analyse Singapore public statistics if you name a topic such as employment, CPI, housing or births."

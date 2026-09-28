@@ -6,7 +6,15 @@ import type {
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error((await response.text()) || "Request failed");
+    const text = await response.text();
+    let message = text || "Request failed";
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      if (typeof body.detail === "string") message = body.detail;
+    } catch {
+      message = text || "Request failed";
+    }
+    throw new Error(message);
   }
   return response.json() as Promise<T>;
 }
@@ -14,6 +22,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 export async function createAnalysis(
   query: string,
   conversationId: string | null,
+  signal?: AbortSignal,
 ): Promise<CreatedAnalysis> {
   const response = await fetch("/api/analyses", {
     method: "POST",
@@ -22,8 +31,14 @@ export async function createAnalysis(
       query,
       conversation_id: conversationId,
     }),
+    signal,
   });
   return parseResponse<CreatedAnalysis>(response);
+}
+
+export async function abortAnalysis(id: string): Promise<void> {
+  const response = await fetch(`/api/analyses/${id}/abort`, { method: "POST" });
+  await parseResponse(response);
 }
 
 export async function fetchAnalyses(): Promise<AnalysisRow[]> {

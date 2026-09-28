@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import {
+  abortAnalysis,
   analysisSocket,
   clearAnalyses,
   createAnalysis,
@@ -48,6 +49,7 @@ type AnalysisState = {
   deleteHistory: (id: string) => Promise<void>;
   clearHistory: () => Promise<void>;
   runAnalysis: () => Promise<void>;
+  abortRun: () => Promise<void>;
   exportResult: (format: "json" | "csv" | "markdown") => void;
 };
 
@@ -57,6 +59,7 @@ type Setter = (
 type Getter = () => AnalysisState;
 
 let activeSocket: WebSocket | null = null;
+let createRequest: AbortController | null = null;
 
 function datasetRows(result: AnalysisResult): Record<string, unknown>[] {
   return result.datasets.flatMap((dataset) =>
@@ -332,15 +335,19 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
     }
 
     activeSocket?.close();
+    createRequest?.abort();
+    const request = new AbortController();
+    createRequest = request;
     set({
       busy: true,
+      activeId: null,
       error: "",
       events: [],
       startedAt: Date.now(),
     });
 
     try {
-      const created = await createAnalysis(query, get().conversationId);
+      const created = await createAnalysis(query, get().conversationId, request.signal);
       set({
         activeId: created.id,
         conversationId: created.conversation_id,
@@ -348,9 +355,32 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       attachSocket(created.id, set, get);
       void get().loadHistory();
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        set({ busy: false, error: "Stopped." });
+        return;
+      }
       set({
         error: error instanceof Error ? error.message : "Request failed.",
         busy: false,
+      });
+    } finally {
+      if (createRequest === request) createRequest = null;
+    }
+  },
+
+  abortRun: async () => {
+    if (!get().busy) return;
+    createRequest?.abort();
+    const id = get().activeId;
+    if (!id) {
+      set({ busy: false, error: "Stopped." });
+      return;
+    }
+    try {
+      await abortAnalysis(id);
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : "Could not stop that run.",
       });
     }
   },

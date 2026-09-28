@@ -166,45 +166,71 @@ def test_statistics_question_is_not_sent_to_the_general_agent():
     assert not looks_like_data("thanks, that was helpful")
 
 
-def test_llm_routes_follow_up_and_sees_latest_analysis(monkeypatch: pytest.MonkeyPatch):
+def saved_employment() -> dict:
+    return {
+        "user": "Analyse employment trends from 2020 to 2024",
+        "assistant": "Manufacturing employment rose.",
+        "kind": "data",
+        "metrics": ["Manufacturing: 494.4 Thousand (increased)"],
+        "charts": ["Employment by sector"],
+        "insights": ["Manufacturing increased"],
+        "scope": {"year_from": 2020, "year_to": 2024, "sector": None},
+        "datasets": [
+            {
+                "provider": "datagov",
+                "dataset_id": "employment",
+                "title": "Employment",
+                "source": "Ministry of Manpower",
+                "citation": "Ministry of Manpower, Employment.",
+                "mode": "live",
+                "format": "json",
+                "quality": {"ok": True},
+                "records": [
+                    {"period": "2020", "series": "Manufacturing", "measure": "Thousand", "value": 100},
+                    {"period": "2024", "series": "Manufacturing", "measure": "Thousand", "value": 120},
+                ],
+            }
+        ],
+    }
+
+
+def test_follow_up_edits_the_saved_analysis(monkeypatch: pytest.MonkeyPatch):
+    calls = []
+    monkeypatch.setattr(fetch, "search", lambda *args, **kwargs: calls.append(args))
+    result = run("Focus on 2020", lambda *event: None, [saved_employment()])
+    assert result["kind"] == "data"
+    assert calls == []
+    assert result["datasets"][0]["dataset_id"] == "employment"
+    assert [row["period"] for row in result["datasets"][0]["records"]] == ["2020"]
+    assert "same datasets were reused" in " ".join(result["scope"]["notes"])
+
+
+def test_chat_follow_up_does_not_edit_or_fetch(monkeypatch: pytest.MonkeyPatch):
+    calls = []
+    monkeypatch.setattr(fetch, "search", lambda *args, **kwargs: calls.append(args))
+    result = run("thanks, that was helpful", lambda *event: None, [saved_employment()])
+    assert result["kind"] == "chat"
+    assert calls == []
+
+
+def test_follow_up_uses_safe_local_reply_when_llm_is_down(monkeypatch: pytest.MonkeyPatch):
     from app.agents.general import agent as general
 
-    prompts = []
-
-    def fake_complete(system, human, schema, variables, **kwargs):
-        prompts.append((schema.__name__, variables))
-        if schema is general.Intent:
-            return {"body": {"kind": "chat", "reason": "Follow-up about the analysis above."}, "provider": "groq"}
-        return {"body": {"message": "Manufacturing reached 494.4 thousand."}, "provider": "groq"}
-
-    calls = []
-    monkeypatch.setattr(general, "complete", fake_complete)
-    monkeypatch.setattr(fetch, "search", lambda *args, **kwargs: calls.append(args))
+    monkeypatch.setattr(general, "complete", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("down")))
     history = [
         {
-            "user": "How many total EP workers in Singapore from 2020 to current",
-            "assistant": "No EP series was found.",
+            "user": "Analyse employment",
+            "assistant": "Employment increased.",
             "kind": "data",
             "metrics": [],
             "charts": [],
             "insights": [],
-        },
-        {
-            "user": "Analyse employment trends in the technology sector from 2020-2024",
-            "assistant": "Manufacturing employment rose.",
-            "kind": "data",
-            "metrics": ["Manufacturing: 494.4 Thousand (increased)"],
-            "charts": ["Employment by sector"],
-            "insights": ["Manufacturing increased"],
-        },
+        }
     ]
-    result = run("can u summarise the analysis result", lambda *event: None, history)
+    result = run("What about housing?", lambda *event: None, history)
     assert result["kind"] == "chat"
-    assert calls == []
-    intent, reply = prompts
-    assert "(analysis) Analyse employment trends" in intent[1]["outline"]
-    assert "Manufacturing: 494.4" in reply[1]["analysis"]
-    assert "EP workers" not in reply[1]["analysis"]
+    assert "existing analysis of: Analyse employment" in result["report"]["briefing"]
+    assert "New conversation" in result["report"]["briefing"]
 
 
 def test_coordinator_notes_when_search_is_down(monkeypatch: pytest.MonkeyPatch):

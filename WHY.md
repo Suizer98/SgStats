@@ -18,7 +18,15 @@ Pydantic helps firm up the model output. The planner, intent router, chat reply 
 
 I also considered Google ADK 2.0, especially for testing nodes separately. For this proof of concept, LangChain and LangGraph were faster to put together. I kept the model client, agent prompts and graph separate, so another agent can be added later as a new node without rewriting the core.
 
-I also added a general agent for messages that do not need a new data analysis. The classifier sends normal chat and follow-up questions there, so users can discuss an existing result without fetching the datasets again.
+I also added a general agent for ordinary chat. A follow-up that asks to change the result does not go there: it edits the analysis already saved in the thread.
+
+## Multi-agent design
+
+I split the work into four agents instead of one prompt that searches, fetches and writes. The coordinator chooses datasets. The extractor fetches and cleans them. The analytics agent computes the figures and drafts the briefing. The general agent handles chat. LangGraph is the only place that decides who runs next, so an agent does not call the others itself.
+
+A new question is classified first. Chat goes straight to the general agent. A statistics question goes coordinator, then extractor, then analytics. If the fetch returns nothing usable, the graph replans once with the remaining candidates. If the briefing contains a number that is not in the computed facts, it revises once and otherwise falls back to a template. Each step emits a thought, an action and an observation, which is what the activity panel streams.
+
+A follow-up in a thread that already has an analysis does not start that search again. A change request reuses the saved datasets and reruns analytics for the new wording. A chat message stays with the general agent and answers from that same result. A different topic needs a new conversation.
 
 ## MCP server
 

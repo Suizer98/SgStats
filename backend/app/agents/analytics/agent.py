@@ -247,6 +247,7 @@ def build_result(
     report: dict,
 ) -> dict:
     return {
+        "kind": "data",
         "query": query,
         "scope": scope,
         "plan": [by_key[key] for key in chosen],

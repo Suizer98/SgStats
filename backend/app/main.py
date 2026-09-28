@@ -37,6 +37,11 @@ INTERRUPTED = "The server restarted before this analysis finished. Run it again.
 
 sockets: dict[str, list[WebSocket]] = defaultdict(list)
 jobs: set[str] = set()
+stopped: set[str] = set()
+
+
+class Stopped(Exception):
+    pass
 
 
 class QueryBody(BaseModel):
@@ -131,6 +136,17 @@ async def create_analysis(body: QueryBody):
     }
 
 
+@app.post("/api/analyses/{analysis_id}/abort")
+def abort_analysis(analysis_id: str):
+    row = store.get_analysis(analysis_id)
+    if not row:
+        raise HTTPException(404, "Not found")
+    if row["status"] != "running":
+        raise HTTPException(409, "This analysis is not running.")
+    stopped.add(analysis_id)
+    return {"aborted": analysis_id}
+
+
 @app.websocket("/ws/analyses/{analysis_id}")
 async def analysis_socket(websocket: WebSocket, analysis_id: str):
     await websocket.accept()
@@ -176,6 +192,8 @@ async def run_job(analysis_id: str, query: str) -> None:
     queue: asyncio.Queue = asyncio.Queue()
 
     def emit(agent: str, step: str, content: str) -> None:
+        if analysis_id in stopped:
+            raise Stopped("Stopped.")
         event = store.save_event(analysis_id, agent, step, content)
         loop.call_soon_threadsafe(queue.put_nowait, event)
 
@@ -190,6 +208,8 @@ async def run_job(analysis_id: str, query: str) -> None:
     try:
         history = await asyncio.to_thread(conversation_history, analysis_id)
         result = await asyncio.to_thread(agents.run, query, emit, history)
+        if analysis_id in stopped:
+            raise Stopped("Stopped.")
         await asyncio.sleep(0)
         await asyncio.to_thread(
             store.save_source_chunks,
@@ -200,10 +220,12 @@ async def run_job(analysis_id: str, query: str) -> None:
         store.finish_analysis(analysis_id, result, None)
         await broadcast(analysis_id, {"step": "done", "analysis_id": analysis_id, "result": result})
     except Exception as exc:
-        store.finish_analysis(analysis_id, None, str(exc))
-        await broadcast(analysis_id, {"step": "error", "analysis_id": analysis_id, "content": str(exc)})
+        message = "Stopped." if analysis_id in stopped or isinstance(exc, Stopped) else str(exc)
+        store.finish_analysis(analysis_id, None, message)
+        await broadcast(analysis_id, {"step": "error", "analysis_id": analysis_id, "content": message})
     finally:
         jobs.discard(analysis_id)
+        stopped.discard(analysis_id)
         queue.put_nowait(None)
         await pump_task
 

@@ -27,9 +27,11 @@ export function QueryForm() {
   const busy = useAnalysisStore((state) => state.busy);
   const error = useAnalysisStore((state) => state.error);
   const conversationId = useAnalysisStore((state) => state.conversationId);
+  const analysisResult = useAnalysisStore((state) => state.analysisResult);
   const setQuery = useAnalysisStore((state) => state.setQuery);
   const startConversation = useAnalysisStore((state) => state.startConversation);
   const runAnalysis = useAnalysisStore((state) => state.runAnalysis);
+  const abortRun = useAnalysisStore((state) => state.abortRun);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -39,14 +41,19 @@ export function QueryForm() {
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
-      void runAnalysis();
+      if (busy) void abortRun();
+      else void runAnalysis();
     }
   }
 
   return (
     <Panel
       title="Ask a policy question"
-      caption="Statistics questions use the data agents. General chat stays a normal conversation."
+      caption={
+        analysisResult
+          ? "A follow-up updates this analysis from the same datasets. Start a new conversation to fetch different data."
+          : "Statistics questions use the data agents. General chat stays a normal conversation."
+      }
       action={
         <HStack spacing={2}>
           {conversationId && (
@@ -97,11 +104,15 @@ export function QueryForm() {
           </Wrap>
 
           <Flex align="center" justify="space-between" gap={3} wrap="wrap">
-            <Button type="submit" colorScheme="brand" isLoading={busy} loadingText="Sending">
-              Send
+            <Button
+              type={busy ? "button" : "submit"}
+              colorScheme={busy ? "red" : "brand"}
+              onClick={busy ? () => void abortRun() : undefined}
+            >
+              {busy ? "Abort" : "Send"}
             </Button>
             <Text fontSize="xs" color="fg.muted">
-              Ctrl/Cmd + Enter to send
+              {busy ? "Ctrl/Cmd + Enter to stop" : "Ctrl/Cmd + Enter to send"}
             </Text>
           </Flex>
 

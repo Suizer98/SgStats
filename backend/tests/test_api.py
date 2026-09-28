@@ -1,3 +1,4 @@
+import threading
 import time
 
 import pytest
@@ -168,6 +169,34 @@ def test_clear_history_leaves_a_running_analysis():
         assert "still-running" in [row["id"] for row in listed]
         assert finished not in [row["id"] for row in listed]
         assert all(row["status"] == "running" for row in listed)
+
+
+def test_abort_stops_a_running_analysis(monkeypatch: pytest.MonkeyPatch):
+    started = threading.Event()
+
+    def slow(query, emit, history=None):
+        emit("coordinator", "thought", "working")
+        started.set()
+        while True:
+            time.sleep(0.05)
+            emit("coordinator", "observation", "still going")
+
+    monkeypatch.setattr(agents, "run", slow)
+    with TestClient(app) as live:
+        analysis_id = live.post("/api/analyses", json={"query": "Analyse employment"}).json()["id"]
+        assert started.wait(2)
+        assert live.post(f"/api/analyses/{analysis_id}/abort").status_code == 200
+        row = wait_for(live, analysis_id)
+        assert row["status"] == "failed"
+        assert row["error"] == "Stopped."
+
+
+def test_abort_unknown_or_finished_analysis():
+    assert client.post("/api/analyses/missing/abort").status_code == 404
+    with TestClient(app) as live:
+        created = live.post("/api/analyses", json={"query": "thanks"}).json()
+        wait_for(live, created["id"])
+        assert live.post(f"/api/analyses/{created['id']}/abort").status_code == 409
 
 
 def test_running_analysis_cannot_be_deleted():
