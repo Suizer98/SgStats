@@ -2,6 +2,8 @@
 
 An agentic policy data analytics platform for Singapore public statistics. Ask a question in plain English, for example "Analyse employment trends in the technology sector from 2020-2024", and three cooperating agents find the right government datasets, fetch and clean them, run the statistics and write a cited briefing whose numbers are checked against the data.
 
+[![React, TypeScript, Tailwind CSS](https://skillicons.dev/icons?i=react,ts,tailwind&perline=3)](https://skillicons.dev) [![LangChain](https://skills.syvixor.com/api/icons?i=langchain)](https://skills.syvixor.com) [![Python, Docker, Ubuntu, Bash](https://skillicons.dev/icons?i=py,docker,ubuntu,bash&perline=4)](https://skillicons.dev)
+
 Go to [WHY.md](WHY.md) to see my actual thoughts.
 
 Further reading:
