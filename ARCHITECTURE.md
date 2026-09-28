@@ -1,5 +1,22 @@
 # Architecture
 
+The api runs the agent graph in a background thread per request and streams every thought, action and observation to the browser. The gov-mcp service owns all government data access and exposes it as two tools, `search_datasets` and `fetch_dataset`. Bifrost holds the provider keys and handles provider fallback, so the application code only knows one OpenAI-compatible endpoint.
+
+```mermaid
+flowchart LR
+    web[React web :5173] -- REST + WebSocket --> api[FastAPI api :8000]
+    api -- LangGraph agents --> api
+    api -- MCP tools --> mcp[gov-mcp :8100]
+    api -- OpenAI-compatible --> bifrost[Bifrost :8080]
+    bifrost --> gemini[Gemini]
+    bifrost -. fallback .-> groq[Groq]
+    mcp --> datagov[Data.gov.sg]
+    mcp --> singstat[SingStat]
+    mcp --> excel[Internal Excel]
+    api --> pg[(Postgres + pgvector)]
+    mcp --> pg
+```
+
 ## Services
 
 | Service | Port | Role |

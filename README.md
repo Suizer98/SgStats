@@ -6,6 +6,8 @@ Further reading:
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) for the system design and agent workflow
 - [DATA_SOURCES.md](DATA_SOURCES.md) for the sources, formats and cleaning rules
+- [TESTING.md](TESTING.md) for the test plan, hallucination checks and results
+- [WHY.md](WHY.md) for the technology choices and design reasons
 
 ## Overview
 
@@ -18,25 +20,6 @@ Further reading:
 | Reports | Briefing with insights, citations and a grounding check, exportable as Markdown, JSON or CSV |
 | Frontend | React dashboard with live agent reasoning over WebSocket, charts, dataset quality and history |
 | Retrieval | pgvector index of dataset descriptions with one embedding model (gemini-embedding-2, 768 dimensions) |
-
-## Architecture
-
-```mermaid
-flowchart LR
-    web[React web :5173] -- REST + WebSocket --> api[FastAPI api :8000]
-    api -- LangGraph agents --> api
-    api -- MCP tools --> mcp[gov-mcp :8100]
-    api -- OpenAI-compatible --> bifrost[Bifrost :8080]
-    bifrost --> gemini[Gemini]
-    bifrost -. fallback .-> groq[Groq]
-    mcp --> datagov[Data.gov.sg]
-    mcp --> singstat[SingStat]
-    mcp --> excel[Internal Excel]
-    api --> pg[(Postgres + pgvector)]
-    mcp --> pg
-```
-
-The api runs the agent graph in a background thread per request and streams every thought, action and observation to the browser. The gov-mcp service owns all government data access and exposes it as two tools, `search_datasets` and `fetch_dataset`. Bifrost holds the provider keys and handles provider fallback, so the application code only knows one OpenAI-compatible endpoint. See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
 
 ## Setup
 
@@ -105,35 +88,14 @@ python3 scripts/smoke.py "Analyse employment trends in the technology sector fro
 cd scripts && python3 smoke_all.py   # all sample queries with a verdict each
 ```
 
-## Testing
+## Running tests
 
 ```bash
-cd backend
-uv sync
-uv run pytest                          # about 10 seconds, no network or keys needed
-uv run pytest --cov --cov-report=term  # with coverage (about 80%)
-LIVE_LLM_URL=http://localhost:8080 GEMINI_MODEL=gemini-3.5-flash GROQ_MODEL=openai/gpt-oss-120b \
-  uv run pytest tests/test_llm.py -k live   # optional check against a running Bifrost
-
-cd ../frontend
-npm run typecheck && npm run build
+cd backend && uv sync && uv run pytest
+cd frontend && npm run typecheck && npm run build
 ```
 
-| File | What is covered |
-| --- | --- |
-| `test_core.py` | Query and period parsing, normalisers, catalog and vector search, MCP client, snapshot fallback |
-| `test_analytics.py` | Hand-calculated per-cent change, Pearson correlation, cross-dataset alignment, Excel source |
-| `test_quality.py` | Duplicates, nulls, required columns, outliers, coverage notes, every real snapshot |
-| `test_llm.py` | Hallucination detection, structured output, revision loop, consistency, provider fallback |
-| `test_agents.py` | Full agent graph, replan after failed fetch, revise, search outage, chat routing |
-| `test_api.py` | Validation, background jobs, WebSocket replay, conversations and history |
-| `test_performance.py` | 10,000-row normalise and summarise, 40 concurrent API requests |
-
-Tests use a temporary SQLite database with foreign keys enforced, and fake the government APIs, MCP service and LLM gateway at the module boundary, so the real parsing, statistics, graph routing and grounding code runs.
-
-Every briefing is checked by `check_grounding` before it is shown: each number in the text must match a computed fact, allowing for rounding, unit scales and sign. Years, ranges and numbers inside series labels are not treated as claims. A failed check triggers one revision that lists the unsupported numbers, then falls back to a template briefing built only from the facts.
-
-End-to-end runs of the sample queries below, plus a gov-mcp outage, all completed in 17 to 34 seconds with grounding passed. CI runs the backend and frontend checks plus `docker compose build` on every push and pull request (`.github/workflows/ci.yml`).
+The suite needs no network or API keys and finishes in about 10 seconds. [TESTING.md](TESTING.md) covers the plan, hallucination checks and results.
 
 ## Sample queries
 
@@ -148,35 +110,12 @@ End-to-end runs of the sample queries below, plus a gov-mcp outage, all complete
 
 To see failure handling, run `docker compose stop gov-mcp` and submit a query. The coordinator reports that search failed, the extractor loads the bundled real snapshots, and the briefing states that the data service was unreachable. Run `docker compose start gov-mcp` to restore it.
 
-## Technology choices
+## Screenshots
 
-| Choice | Why |
-| --- | --- |
-| LangGraph on LangChain | The workflow has real branches (replan when extraction fails, revise when grounding fails). A state graph makes those decisions explicit, testable and visible, while LangChain supplies prompt templates, structured output parsing and a provider-neutral chat model. |
-| Bifrost gateway | Provider keys and fallback order live in one service instead of every caller. Swapping or adding a provider is a config change, and the gateway dashboard gives request logs and token counts. |
-| Gemini and Groq | Two independent providers with free tiers. Gemini is the primary for quality and Groq is a fast fallback when Gemini is rate limited. |
-| MCP-style gov-mcp service | Data access is isolated behind two tools with a JSON contract, so other agents or clients can reuse it, and a slow government API cannot block the api process. |
-| FastAPI | Async REST and WebSocket in one framework, with request validation from Pydantic and generated OpenAPI docs. |
-| Postgres with pgvector | One database for analyses, agent events, conversation history and the dataset vector index, instead of running a separate vector store. |
-| pandas | Reliable reshaping, grouping and statistics for tabular government data in CSV, Excel and JSON. |
-| React, Vite, Chakra UI, Recharts | Fast development build, accessible components themed to the Singapore government developer portal, and simple declarative charts. |
-| uv and Docker Compose | Locked, reproducible Python installs and a one-command local stack. |
+Analysis result with charts and live agent steps:
 
-## Project layout
+![Employment analysis with metrics, charts and agent activity](screenshots/analysis.png)
 
-```text
-backend/app/agents/      coordinator, extractor and analytics agents plus the LangGraph pipeline
-backend/app/llm/         generic LangChain client (no domain prompts)
-backend/app/gov/         catalog search, fetching, normalisation, statistics, embeddings
-backend/app/core/        settings and the SQLAlchemy store
-backend/app/main.py      REST and WebSocket API
-backend/data/            dataset index, real snapshots, mock internal workbook
-backend/tests/           unit, integration, LLM, data quality and performance tests
-mcp/server.py            gov-mcp tool service
-frontend/src/            React dashboard
-scripts/                 smoke test, snapshot refresh, mock data generator
-```
+Chat in the same thread, grouped as one history item:
 
-## Secrets and deployment
-
-Keys are read from `.env`, which is git-ignored. Only `.env.example` with empty values is committed, and the Bifrost config references keys through `env.` variables. For deployment, build the same images and supply the variables through the platform's secret store (for example Azure Container Apps secrets, AWS Secrets Manager or Kubernetes secrets). Point `DATABASE_URL` at a managed Postgres with the `vector` extension enabled, and run api and gov-mcp as separate services so they can scale independently. The api is stateless apart from Postgres, so it can run as several replicas behind a load balancer; WebSocket clients that reconnect to another replica receive a replay of stored events.
+![Chat reply and a history thread with two messages](screenshots/chat.png)
