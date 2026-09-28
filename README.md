@@ -116,10 +116,14 @@ To see failure handling, run `docker compose stop gov-mcp` and submit a query. T
 
 ## Screenshots
 
-Analysis result with charts and live agent steps:
+Analysis in progress. The send button becomes Abort, and agent steps stream in on the right:
 
-![Employment analysis with metrics, charts and agent activity](screenshots/analysis.png)
+![Births query running, with Abort and coordinator thoughts](screenshots/running.jpeg)
 
-Chat in the same thread, grouped as one history item:
+Finished analysis, with metrics, charts and the agent log:
 
-![Chat reply and a history thread with two messages](screenshots/chat.png)
+![EP workforce analysis with charts and agent activity](screenshots/analysis.png)
+
+History keeps each conversation as one item:
+
+![History drawer with saved analysis threads](screenshots/chat.jpeg)

@@ -19,7 +19,7 @@ export default function App() {
   }, [loadHistory, checkHealth]);
 
   return (
-    <Box id="app-shell" position="relative" minH="100vh">
+    <Box minH="100vh">
       <Header />
       <Container maxW="8xl" py={{ base: 5, md: 8 }}>
         <Stack spacing={{ base: 5, md: 6 }}>
