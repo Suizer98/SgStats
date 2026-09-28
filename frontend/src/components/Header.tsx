@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import {
   Badge,
   Box,
@@ -62,6 +63,7 @@ export function Header() {
   const result = useAnalysisStore((state) => state.result);
   const models = llmLabel(result);
   const historyDrawer = useDisclosure();
+  const appShell = historyDrawer.isOpen ? document.getElementById("app-shell") : null;
 
   return (
     <Box bg="bg.surface" borderTop="4px solid" borderTopColor="civic.red" borderBottomWidth="1px" borderColor="border.subtle">
@@ -131,8 +133,13 @@ export function Header() {
           </HStack>
         </Flex>
       </Container>
+      {appShell &&
+        createPortal(
+          <Box position="absolute" inset="0" bg="blackAlpha.600" zIndex={10} onClick={historyDrawer.onClose} />,
+          appShell,
+        )}
       <Drawer isOpen={historyDrawer.isOpen} placement="right" onClose={historyDrawer.onClose} size="md">
-        <DrawerOverlay bg="blackAlpha.600" />
+        <DrawerOverlay bg="transparent" />
         <DrawerContent>
           <DrawerCloseButton />
           <DrawerHeader>History</DrawerHeader>
