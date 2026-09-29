@@ -40,8 +40,12 @@ services:
       APP_HOST: "0.0.0.0"
       APP_PORT: "8080"
       BIFROST_ENCRYPTION_KEY: ${BIFROST_ENCRYPTION_KEY:-sgstats-local-bifrost-key-32bytes!!}
+      BIFROST_SETUP_TOKEN: ${BIFROST_SETUP_TOKEN:-sgstats-local-setup}
     volumes:
       - ./bifrost:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   api:
     build: ./backend

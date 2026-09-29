@@ -127,3 +127,15 @@ Finished analysis, with metrics, charts and the agent log:
 History keeps each conversation as one item:
 
 ![History drawer with saved analysis threads](screenshots/chat.jpeg)
+
+Bifrost logs every model call. Here Gemini failed and Groq answered the same request:
+
+![Bifrost LLM logs with Gemini errors and a Groq fallback](screenshots/bifrost.jpeg)
+
+Open a red Gemini row to see the provider error. This one is a 503 because the model was under high demand:
+
+![Gemini log detail showing a high demand error](screenshots/bifrost2.jpeg)
+
+The green Groq row for that same call shows the fallback reply, with token counts and cost:
+
+![Groq fallback log with tokens and cost](screenshots/bifrost3.jpeg)

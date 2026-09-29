@@ -50,7 +50,9 @@ I wanted to integrate different LLM providers behind one OpenAI-compatible API. 
 
 Because of that, the LangChain backend only needs one `ChatOpenAI` module in `app/llm/client.py`. The agents all use the same client instead of having separate Gemini and Groq integrations. This keeps the code simpler and makes provider changes easier to maintain.
 
-This setup only uses the shared API and the Gemini-to-Groq fallback. Logging is off in the current config. Later I would turn on request logs for tokens, cost and latency, then add semantic caching, budgets, rate limits and virtual keys so each caller only reaches the models it is allowed to use.
+Logging is on. Bifrost writes each request into the same Postgres database as the app, in its own tables: `logs` for the calls, and `config_` tables for the gateway settings. Analyses and conversations stay in their own tables. The dashboard on port 8080 shows the provider, latency, tokens and cost for every call.
+
+I have not turned on semantic caching, budgets, rate limits or virtual keys yet. Caching would need care here, because a similar question can still be about a different period or dataset. Budgets and virtual keys would come later, so each caller only reaches the models it is allowed to use.
 
 ## Postgres
 

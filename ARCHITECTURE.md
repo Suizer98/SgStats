@@ -15,6 +15,7 @@ flowchart LR
     mcp --> excel[Internal Excel]
     api --> pg[(Postgres + pgvector)]
     mcp --> pg
+    bifrost --> pg
 ```
 
 ## Services
@@ -24,8 +25,8 @@ flowchart LR
 | web | 5173 | React dashboard. Submits queries, streams agent events, renders charts, quality checks, briefing and history. |
 | api | 8000 | FastAPI. REST endpoints, WebSocket stream, background agent jobs, persistence. Runs the LangGraph agents. |
 | gov-mcp | 8100 | Tool service for government data. `search_datasets` and `fetch_dataset`, plus a JSON-RPC `/mcp` endpoint. |
-| bifrost | 8080 | OpenAI-compatible LLM gateway. Holds provider keys, routes to Gemini and falls back to Groq. |
-| postgres | 5432 | Postgres 16 with pgvector. Conversations, analyses, agent events, dataset vectors, source chunks. |
+| bifrost | 8080 | OpenAI-compatible LLM gateway. Holds provider keys, routes to Gemini, falls back to Groq, and exposes request observability. |
+| postgres | 5432 | Postgres 16 with pgvector. Stores application data and vectors, plus Bifrost configuration and LLM request logs in separate tables. |
 
 ```mermaid
 flowchart TB
@@ -52,6 +53,7 @@ flowchart TB
     mcp --> sources["Data.gov.sg / SingStat / internal Excel"]
     job --> db[(Postgres + pgvector)]
     mcp --> db
+    bifrost --> db
 ```
 
 ## Request lifecycle
@@ -114,6 +116,8 @@ This is the ReAct pattern: each agent emits a thought, takes an action with a to
 
 Prompts live with their agents: dataset planning in the coordinator and briefing in analytics. Adding a provider means adding it to Bifrost and to `chat_model_ids()`.
 
+Bifrost records each provider attempt in Postgres. Its dashboard on port 8080 shows status, provider, model, latency, input and output tokens, and estimated cost. A failed Gemini attempt and the successful Groq fallback are separate log rows linked to the same request flow, which makes provider failures visible even when the application receives a successful final response. Bifrost configuration is also stored in Postgres so dashboard changes persist across container restarts.
+
 ## Retrieval
 
 Each fetched dataset is embedded once (title, agency, series names and measures) with `gemini-embedding-2` at 768 dimensions and stored in the `dataset_entries` table. Search ranks by cosine distance with pgvector, then mixes in keyword matches from the Data.gov.sg index, SingStat's own search and the internal source. If embeddings are unavailable, keyword ranking with synonyms is used. One embedding model is used everywhere so vectors are always comparable.
@@ -127,6 +131,8 @@ Each fetched dataset is embedded once (title, agency, series names and measures)
 | `agent_events` | Agent, step (thought, action, observation), content, timestamp |
 | `dataset_entries` | Provider, dataset id, title, agency, coverage, detail text, 768-dimension embedding |
 | `source_chunks` | Records used by each analysis, for traceability |
+
+Bifrost owns its tables in the same database. The main request table is `logs`; gateway settings use `config_` tables, and governance uses `governance_` tables. The application does not read or write those tables directly.
 
 ## Scalability
 
