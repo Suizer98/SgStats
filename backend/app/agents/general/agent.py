@@ -5,16 +5,10 @@ import re
 from pydantic import BaseModel, Field
 
 from app.agents.types import Emit
+from app.constants import DATA_CUES, EDIT_CUES, SYNONYMS
 from app.core import settings, store
-from app.gov import catalog, data
+from app.gov import data
 from app.llm.client import complete
-
-
-DATA_CUES = re.compile(
-    r"\b(analys|compar|correlat|statistic|dataset|employment|unemploy|wage|salary|cpi|inflation|"
-    r"gdp|hdb|fertility|birth|housing|price|vacanc|workforce|sector|resident|population)\b",
-    re.I,
-)
 
 
 class ChatReply(BaseModel):
@@ -30,7 +24,7 @@ def looks_like_data(query: str) -> bool:
     if DATA_CUES.search(query):
         return True
     words = re.findall(r"[a-z][a-z\-]*", query.lower())
-    return any(word in catalog.SYNONYMS for word in words)
+    return any(word in SYNONYMS for word in words)
 
 
 def thread_outline(history: list[dict]) -> str:
@@ -43,12 +37,6 @@ def thread_outline(history: list[dict]) -> str:
         lines.append("Latest analysis already shows:")
         lines.extend(f"  - {line}" for line in latest["metrics"])
     return "\n".join(lines) or "none"
-
-
-EDIT_CUES = re.compile(
-    r"\b(only|just|focus|instead|without|exclude|remove|limit|update|change|narrow|filter|show|compare|between)\b",
-    re.I,
-)
 
 
 def named_years(query: str) -> list[int]:

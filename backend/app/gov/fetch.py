@@ -4,14 +4,9 @@ import httpx
 import pandas as pd
 
 from app import mcp
+from app.constants import DATAGOV_META_URL, DATAGOV_URL, HEADERS, ROW_LIMIT, SINGSTAT_URL
 from app.core import settings
 from app.gov import catalog, data, sources
-
-DATAGOV_URL = "https://data.gov.sg/api/action/datastore_search"
-DATAGOV_META_URL = "https://api-production.data.gov.sg/v2/public/api/datasets/{}/metadata"
-SINGSTAT_URL = "https://tablebuilder.singstat.gov.sg/api/table/tabledata"
-HEADERS = {"User-Agent": "SgStats/0.1", "Accept": "application/json"}
-ROW_LIMIT = 10000
 
 
 def get_datagov(dataset_id: str) -> dict:

@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-import re
-
 from pydantic import BaseModel, Field
 
 from app.agents.types import Emit
+from app.constants import NUMBERS, PERIOD_LABELS
 from app.gov import data
 from app.llm.client import complete
-
-PERIOD_LABELS = re.compile(
-    r"\b(?:19|20)\d{2}(?:\s*[-/ ]?\s*(?:Q[1-4]|H[12])|[-/]\d{2})\b|\b[QH][1-4]\b|\b[1-4][QH]\b", re.I
-)
-NUMBERS = re.compile(r"(?<![\w.])([+\-\u2010\u2011\u2012\u2013\u2212]?)(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)")
 
 
 class Briefing(BaseModel):

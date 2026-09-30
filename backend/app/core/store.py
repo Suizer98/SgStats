@@ -11,9 +11,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.types import JSON
 
+from app.constants import EMBED_DIM
 from app.core import settings
-
-VECTOR_SIZE = 768
 
 
 class Base(DeclarativeBase):
@@ -21,7 +20,7 @@ class Base(DeclarativeBase):
 
 
 JsonType = JSONB().with_variant(JSON(), "sqlite")
-EmbeddingType = Vector(VECTOR_SIZE).with_variant(JSON(), "sqlite")
+EmbeddingType = Vector(EMBED_DIM).with_variant(JSON(), "sqlite")
 
 
 class Conversation(Base):

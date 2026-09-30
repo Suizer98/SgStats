@@ -7,38 +7,27 @@ from datetime import date
 
 import pandas as pd
 
+from app.constants import (
+    FALLBACK_YEARS,
+    GRAIN_LABELS,
+    MAX_CORRELATIONS,
+    MAX_MEASURES,
+    MAX_OUTLIERS,
+    MAX_PERIODS,
+    MAX_SCALE_RATIO,
+    MAX_SERIES,
+    MIN_CORRELATION_POINTS,
+    MIN_OUTLIER_POINTS,
+    MISSING_MARKERS,
+    MONTHS,
+    OPEN_ENDED,
+    OUTLIER_Z,
+    PREFERRED_MEASURES,
+    SECTORS,
+    SKIP_NUMERIC,
+    TIME_HINTS,
+)
 from app.core.settings import DATA_DIR
-
-SECTORS = {
-    "technology": "Information and Communications",
-    "tech": "Information and Communications",
-    "ict": "Information and Communications",
-    "information and communications": "Information and Communications",
-    "finance": "Financial and Insurance Services",
-    "financial": "Financial and Insurance Services",
-    "manufacturing": "Manufacturing",
-}
-
-MONTHS = {
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
-}
-OPEN_ENDED = re.compile(r"\b(current|now|present|today|to date|latest|since|onwards?)\b")
-TIME_HINTS = ("year", "month", "quarter", "period", "date", "half")
-SKIP_NUMERIC = re.compile(r"(^id$|year|date|postal|block|code|lease_commence)")
-MISSING_MARKERS = {"", "na", "n.a.", "n/a", "-", "--", "..", "nil", "null", "none", "s", "x"}
-PREFERRED_MEASURES = ("value", "count", "number", "total", "index", "rate", "price", "amount", "percent")
-GRAIN_LABELS = {"year": "Year", "half": "Half-year", "quarter": "Quarter", "month": "Month"}
-MAX_SERIES = 6
-MAX_MEASURES = 2
-MAX_PERIODS = 40
-MAX_SCALE_RATIO = 50
-MIN_OUTLIER_POINTS = 5
-OUTLIER_Z = 3.5
-MAX_OUTLIERS = 5
-MIN_CORRELATION_POINTS = 4
-MAX_CORRELATIONS = 5
-FALLBACK_YEARS = 5
 
 
 def current_year() -> int:

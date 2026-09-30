@@ -16,6 +16,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
+from app.constants import PROVIDER_ORDER
 from app.core import settings
 
 
@@ -24,7 +25,6 @@ class LLMError(Exception):
 
 
 calledProviders: ContextVar[list[str] | None] = ContextVar("calledProviders", default=None)
-PROVIDER_ORDER = ("gemini", "groq")
 
 
 def begin_providers() -> None:

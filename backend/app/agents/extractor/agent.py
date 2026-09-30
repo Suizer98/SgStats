@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from app.agents.types import Emit
+from app.constants import MAX_ATTEMPTS
 from app.gov import fetch
-
-MAX_ATTEMPTS = 4
 
 
 def collect(

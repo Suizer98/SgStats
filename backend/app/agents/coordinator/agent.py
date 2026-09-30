@@ -3,14 +3,10 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from app.agents.types import Emit
+from app.constants import CROSS_CHECK_DEPTH, GOVERNMENT_PROVIDERS, MAX_PLAN
 from app.core import settings
 from app.gov import catalog, data, fetch
 from app.llm.client import LLMError, complete
-
-
-CROSS_CHECK_DEPTH = 6
-MAX_PLAN = 3
-GOVERNMENT_PROVIDERS = {"datagov", "singstat"}
 
 
 class DatasetPlan(BaseModel):

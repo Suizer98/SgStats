@@ -6,17 +6,19 @@ from pathlib import Path
 import httpx
 import numpy as np
 
+from app.constants import (
+    BATCH_SIZE,
+    BATCH_TIMEOUT,
+    DEFAULT_COOLDOWN,
+    EMBED_DIM,
+    GEMINI_PROVIDER,
+    GEMINI_URL,
+    GROQ_PROVIDER,
+    GROQ_URL,
+    REQUEST_TIMEOUT,
+    VECTOR_PATH,
+)
 from app.core import settings
-
-GEMINI_PROVIDER = "gemini-embedding-2"
-GROQ_PROVIDER = "nomic-embed-text-v1.5"
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents"
-GROQ_URL = "https://api.groq.com/openai/v1/embeddings"
-EMBED_DIM = 768
-BATCH_SIZE = 64
-REQUEST_TIMEOUT = 10
-BATCH_TIMEOUT = 60
-DEFAULT_COOLDOWN = 60
 
 blocked_until = 0.0
 
@@ -180,7 +182,7 @@ def build_title_vectors(items: list[dict], path: Path, provider: str = GEMINI_PR
 
 
 if __name__ == "__main__":
-    from app.gov.catalog import VECTOR_PATH, load_index
+    from app.gov.catalog import load_index
 
     count = build_title_vectors(load_index(), VECTOR_PATH)
     print(f"Saved {count} title embeddings to {VECTOR_PATH}")

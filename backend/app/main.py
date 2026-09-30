@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app import agents
 from app.agents.general.agent import conversation_history
+from app.constants import INTERRUPTED
 from app.core import store
 from app.gov import catalog
 
@@ -32,8 +33,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-INTERRUPTED = "The server restarted before this analysis finished. Run it again."
 
 sockets: dict[str, list[WebSocket]] = defaultdict(list)
 jobs: set[str] = set()

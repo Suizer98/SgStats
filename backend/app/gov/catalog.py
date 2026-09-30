@@ -9,49 +9,25 @@ from concurrent.futures import ThreadPoolExecutor
 import httpx
 import numpy as np
 
+from app.constants import (
+    DATAGOV_LIST_URL,
+    DUPLICATE_OVERLAP,
+    EMBED_MARGIN,
+    FREQUENCY_WORDS,
+    HEADERS,
+    INDEX_MAX_AGE,
+    INDEX_PATH,
+    INTERNAL_MIN_SCORE,
+    MAX_CANDIDATES,
+    SINGSTAT_BONUS,
+    SINGSTAT_PHRASES,
+    SINGSTAT_SEARCH_URL,
+    STOPWORDS,
+    SYNONYMS,
+    VECTOR_PATH,
+)
 from app.core import settings, store
 from app.gov import data, embed, sources
-
-DATAGOV_LIST_URL = "https://api-production.data.gov.sg/v2/public/api/datasets"
-SINGSTAT_SEARCH_URL = "https://tablebuilder.singstat.gov.sg/api/table/resourceid"
-HEADERS = {"User-Agent": "SgStats/0.1", "Accept": "application/json"}
-INDEX_PATH = settings.DATA_DIR / "datagov_index.json"
-VECTOR_PATH = settings.DATA_DIR / "datagov_vectors.npz"
-EMBED_MARGIN = 0.08
-INDEX_MAX_AGE = 7 * 24 * 3600
-MAX_CANDIDATES = 12
-SINGSTAT_PHRASES = 3
-
-STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "between", "by", "compare", "current", "data", "did", "do",
-    "does", "for", "from", "how", "in", "is", "latest", "many", "much", "now", "of", "on", "over",
-    "present", "show", "since", "singapore", "sg", "the", "to", "total", "trend", "trends", "was",
-    "were", "what", "which", "who", "with", "year", "years", "analyse", "analyze", "tell", "me",
-    "give", "change", "changes", "during", "past", "last", "number", "numbers", "stats",
-    "statistics", "today", "until", "vs", "versus", "perform", "performance", "say", "about",
-    "has", "have", "had", "been", "changed", "changing", "grown", "grow", "looks", "like", "can",
-    "could", "would", "should", "please", "overall", "recent", "recently", "compared",
-}
-SINGSTAT_BONUS = 0.6
-INTERNAL_MIN_SCORE = 2
-DUPLICATE_OVERLAP = 0.9
-FREQUENCY_WORDS = {"annual", "half", "yearly", "quarterly", "monthly", "weekly", "daily", "seasonally", "adjusted"}
-SYNONYMS = {
-    "ep": ["employment pass", "foreign workforce"],
-    "eps": ["employment pass", "foreign workforce"],
-    "spass": ["s pass", "foreign workforce"],
-    "wp": ["work permit", "foreign workforce"],
-    "foreigners": ["foreign workforce", "non-resident population"],
-    "cpi": ["consumer price index"],
-    "inflation": ["consumer price index"],
-    "gdp": ["gross domestic product"],
-    "coe": ["certificate of entitlement"],
-    "pr": ["permanent resident"],
-    "prs": ["permanent resident"],
-    "fertility": ["births and fertility"],
-    "tfr": ["fertility rate"],
-    "jobless": ["unemployment"],
-}
 
 index_cache: list[dict] | None = None
 vector_cache: tuple[list[str], np.ndarray] | None = None
