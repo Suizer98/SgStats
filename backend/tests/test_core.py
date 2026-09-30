@@ -35,9 +35,8 @@ def test_parse_open_ended_range():
     assert parse_query("Births and fertility trends")["year_from"] == current_year() - 9
 
 
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
+def test_parse_period():
+    cases = [
         ("2020", ("2020", 2020, "year")),
         ("2020-Q3", ("2020-Q3", 2020, "quarter")),
         ("2020 3Q", ("2020-Q3", 2020, "quarter")),
@@ -48,10 +47,9 @@ def test_parse_open_ended_range():
         ("2020 2H", ("2020-H2", 2020, "half")),
         ("2019/20", ("2019", 2019, "year")),
         ("ANG MO KIO", None),
-    ],
-)
-def test_parse_period(raw, expected):
-    assert parse_period(raw) == expected
+    ]
+    for raw, expected in cases:
+        assert parse_period(raw) == expected
 
 
 def test_long_table_uses_column_titles_and_series():

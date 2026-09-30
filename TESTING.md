@@ -5,7 +5,7 @@
 ```bash
 cd backend
 uv sync
-uv run pytest                          # about 10 seconds, no network or keys needed
+uv run pytest                          # 100 cases, about 10 seconds, no network or keys needed
 uv run pytest --cov --cov-report=term  # with coverage (about 80% of backend/app)
 LIVE_LLM_URL=http://localhost:8080 GEMINI_MODEL=gemini-3.5-flash GROQ_MODEL=openai/gpt-oss-120b \
   uv run pytest tests/test_llm.py -k live   # optional check against a running Bifrost
@@ -25,7 +25,7 @@ CI runs the same backend and frontend checks plus `docker compose build` on ever
 | `test_core.py` | Query and period parsing, normalisers, catalog and vector search, MCP client, snapshot fallback |
 | `test_analytics.py` | Hand-calculated per-cent change, Pearson correlation, cross-dataset alignment, Excel source |
 | `test_quality.py` | Duplicates, nulls, required columns, outliers, coverage notes, every real snapshot |
-| `test_llm.py` | Hallucination detection, structured output, revision loop, consistency, provider fallback |
+| `test_llm.py` | Hallucination detection, structured output, revision loop, consistency, Gemini-to-Groq fallback, and the Bifrost config (logging on, logs and settings in the same Postgres database) |
 | `test_agents.py` | Full agent graph, replan after failed fetch, revise, search outage, chat routing |
 | `test_api.py` | Validation, background jobs, WebSocket replay, conversations and history |
 | `test_performance.py` | 10,000-row normalise and summarise under 3 seconds, 40 concurrent API requests with p95 under 1 second |
@@ -110,7 +110,7 @@ The manual outage scenario stops gov-mcp before submission. A pass requires a vi
 
 ## Results
 
-The suite passes with no network or API keys, in about 10 seconds, at about 80% line coverage of `backend/app`. The lower coverage is live HTTP (government APIs, embedding jobs, Postgres-only vector queries), which the end-to-end runs exercise instead.
+The backend suite is 100 cases. It passes with no network or API keys, in about 10 seconds, at about 80% line coverage of `backend/app`. One case reads `bifrost/config.json` and checks that request logging is on and that both the log store and the config store use the `sgstats` Postgres database. The Gemini-to-Groq fallback is checked on the LangChain client, without calling the gateway. The lower coverage is live HTTP (government APIs, embedding jobs, Postgres-only vector queries), which the end-to-end runs exercise instead.
 
 End-to-end runs of the sample queries in the README, plus a gov-mcp outage, all completed in 17 to 34 seconds with grounding passed. With the data service stopped, search failure is reported, bundled snapshots are loaded, and the briefing says the service was unreachable.
 

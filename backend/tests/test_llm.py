@@ -6,6 +6,7 @@ grounding code run without a network call. The live test at the bottom is opt-in
 
 import json
 import os
+from pathlib import Path
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
@@ -38,45 +39,28 @@ def briefing(text: str, insights: list[str] | None = None) -> str:
     return json.dumps({"title": "ICT employment", "insights": insights or [text], "briefing": text})
 
 
-class TestHallucinationDetection:
-    def test_invented_number_is_flagged(self):
-        result = check_grounding("ICT employment reached 999.9 thousand.", facts=[157.6, 180.3])
-        assert result["passed"] is False
-        assert result["unsupported_numbers"] == [999.9]
+def test_grounding_flags_unsupported_numbers():
+    invented = check_grounding("ICT employment reached 999.9 thousand.", facts=[157.6, 180.3])
+    assert invented["passed"] is False
+    assert invented["unsupported_numbers"] == [999.9]
+    assert not check_grounding("Employment grew 14.9%.", facts=[14.4])["passed"]
+    assert check_grounding("A net change of \u20112,700 in 2020.", facts=[2700.0])["unsupported_numbers"] == [-2700.0]
+    assert check_grounding("A net change of +300 in 2024.", facts=[-300.0])["passed"] is False
+    text = "Births to women aged 15 - 19 Years fell to 1.3."
+    assert not check_grounding(text, facts=[1.3])["passed"]
 
-    def test_rounded_numbers_are_accepted(self):
-        assert check_grounding("Employment grew about 14% to 180 thousand.", facts=[14.4, 180.3])["passed"]
 
-    def test_rounding_must_match_the_stated_precision(self):
-        assert not check_grounding("Employment grew 14.9%.", facts=[14.4])["passed"]
-
-    def test_unsigned_numbers_match_by_magnitude(self):
-        assert check_grounding("ICT employment fell by 300 in 2024.", facts=[-300.0])["passed"]
-
-    def test_wrong_sign_is_flagged(self):
-        assert check_grounding("A net change of \u20112,700 in 2020.", facts=[2700.0])["unsupported_numbers"] == [-2700.0]
-        assert check_grounding("A net change of +300 in 2024.", facts=[-300.0])["passed"] is False
-
-    def test_matching_signs_pass(self):
-        assert check_grounding("Changes were -300 and +15,200 (\u22125,100).", facts=[-300.0, 15200.0, -5100.0])["passed"]
-
-    def test_ranges_are_not_read_as_negative(self):
-        assert check_grounding("Between 10-15 and 157.6\u2013180.3 over 2020\u20132024.", facts=[10, 15, 157.6, 180.3])["passed"]
-
-    def test_unit_scales_are_accepted(self):
-        text = "Stock reached 187,300 (187.3 thousand, or 0.19 million)."
-        assert check_grounding(text, facts=[187300.0])["passed"]
-
-    def test_years_and_period_labels_are_not_treated_as_claims(self):
-        assert check_grounding("Between 2020 and 2024-Q3 and 2022-12 the series moved.", facts=[])["passed"]
-
-    def test_numbers_inside_series_labels_are_names(self):
-        text = "Births to women aged 15 - 19 Years fell to 1.3."
-        assert not check_grounding(text, facts=[1.3])["passed"]
-        assert check_grounding(text, facts=[1.3], labels=["15 - 19 Years"])["passed"]
-
-    def test_empty_text_passes(self):
-        assert check_grounding("", facts=[1.0])["passed"]
+def test_grounding_accepts_known_forms():
+    assert check_grounding("Employment grew about 14% to 180 thousand.", facts=[14.4, 180.3])["passed"]
+    assert check_grounding("ICT employment fell by 300 in 2024.", facts=[-300.0])["passed"]
+    assert check_grounding("Changes were -300 and +15,200 (\u22125,100).", facts=[-300.0, 15200.0, -5100.0])["passed"]
+    assert check_grounding("Between 10-15 and 157.6\u2013180.3 over 2020\u20132024.", facts=[10, 15, 157.6, 180.3])["passed"]
+    text = "Stock reached 187,300 (187.3 thousand, or 0.19 million)."
+    assert check_grounding(text, facts=[187300.0])["passed"]
+    assert check_grounding("Between 2020 and 2024-Q3 and 2022-12 the series moved.", facts=[])["passed"]
+    labelled = "Births to women aged 15 - 19 Years fell to 1.3."
+    assert check_grounding(labelled, facts=[1.3], labels=["15 - 19 Years"])["passed"]
+    assert check_grounding("", facts=[1.0])["passed"]
 
 
 def test_structured_output_is_parsed_from_the_chat_model(monkeypatch: pytest.MonkeyPatch):
@@ -163,6 +147,19 @@ def test_template_report_with_numbered_labels_is_grounded():
     body = analytics.fallback_report("q", summary, [dataset])
     text = body["briefing"] + " " + " ".join(body["insights"])
     assert check_grounding(text, summary["facts"], analytics.summary_labels(summary))["passed"]
+
+
+def test_bifrost_config_stores_logs_and_settings_in_postgres():
+    path = Path(settings.ROOT).parent / "bifrost" / "config.json"
+    config = json.loads(path.read_text(encoding="utf-8"))
+    assert config["client"]["enable_logging"] is True
+    assert set(config["providers"]) == {"gemini", "groq"}
+    logs = config["logs_store"]
+    stored = config["config_store"]
+    assert logs["enabled"] is True and stored["enabled"] is True
+    assert logs["type"] == stored["type"] == "postgres"
+    assert logs["config"]["db_name"] == stored["config"]["db_name"] == "sgstats"
+    assert logs["config"]["host"] == stored["config"]["host"] == "postgres"
 
 
 def test_gateway_requests_groq_as_fallback(monkeypatch: pytest.MonkeyPatch):
