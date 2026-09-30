@@ -85,13 +85,6 @@ npm install
 npm run dev
 ```
 
-To exercise the whole stack from the command line, the smoke script submits a query and prints every agent step, dataset, metric and the briefing:
-
-```bash
-python3 scripts/smoke.py "Analyse employment trends in the technology sector from 2020-2024"
-cd scripts && python3 smoke_all.py   # all sample queries with a verdict each
-```
-
 ## Running tests
 
 ```bash

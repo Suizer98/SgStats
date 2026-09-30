@@ -12,8 +12,6 @@ LIVE_LLM_URL=http://localhost:8080 GEMINI_MODEL=gemini-3.5-flash GROQ_MODEL=open
 
 cd ../frontend
 npm run typecheck && npm run build
-
-python3 scripts/smoke.py "<query>"     # end-to-end against a running stack
 ```
 
 CI runs the same backend and frontend checks plus `docker compose build` on every push and pull request (`.github/workflows/ci.yml`).
@@ -40,7 +38,7 @@ The suite follows the same boundaries as the application:
 2. Integration tests run the LangGraph workflow with fake external services but real agent nodes, graph edges and fallback logic.
 3. API tests create background jobs, persist results and reconnect through WebSockets.
 4. Performance tests enforce generous CI budgets for large datasets and concurrent requests.
-5. Smoke tests exercise the deployed Docker stack with real service boundaries and optional live providers.
+5. A running stack is checked by submitting a query in the UI, including the gov-mcp outage case.
 
 External systems are mocked only at their network boundary. This keeps normalisation, planning, analytics, persistence and report validation under test while avoiding flaky government APIs, quotas and LLM variation in the default suite.
 
@@ -104,7 +102,7 @@ The load test stubs the expensive agent work. It measures API acceptance, backgr
 
 ## End-to-end checks
 
-`scripts/smoke.py` submits one query to the running stack, follows the live event stream and prints datasets, metrics, citations and grounding status. `scripts/smoke_all.py` runs all README sample queries and reports a verdict for each.
+Submit a query in the UI at http://localhost:5173 and confirm the agent activity, datasets, chart, and grounding status. The sample queries in the README are the set used for that check.
 
 The manual outage scenario stops gov-mcp before submission. A pass requires a visible search failure, local snapshot fallback, a completed report and a note that live data was unavailable. This demonstrates graceful degradation instead of hiding the failure.
 
