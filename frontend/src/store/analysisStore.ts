@@ -27,6 +27,7 @@ type AnalysisState = {
   events: AgentEvent[];
   result: AnalysisResult | null;
   chatResult: AnalysisResult | null;
+  chatMessages: AnalysisResult[];
   analysisResult: AnalysisResult | null;
   chatId: string | null;
   analysisId: string | null;
@@ -87,21 +88,64 @@ function sameSocket(analysisId: string): boolean {
   );
 }
 
+function toChatResult(result: AnalysisResult): AnalysisResult {
+  if (result.kind === "chat") return result;
+  return {
+    ...result,
+    kind: "chat",
+    report: {
+      ...result.report,
+      title: "Conversation",
+      briefing: result.report.chat_message ?? result.report.briefing,
+      insights: [],
+      citations: [],
+    },
+    plan: [],
+    datasets: [],
+    summary: { metrics: [], charts: [], correlations: [] },
+  };
+}
+
 function storedResult(result: AnalysisResult, id: string): Partial<AnalysisState> {
   if (result.kind === "chat") {
-    return { result, chatResult: result, chatId: id, resultTab: "chat" };
+    return (state: AnalysisState) => {
+      const exists = state.chatMessages.some(msg => msg.query === result.query);
+      return {
+        result,
+        chatResult: result,
+        chatId: id,
+        resultTab: "chat",
+        chatMessages: exists ? state.chatMessages : [...state.chatMessages, result],
+      };
+    };
   }
-  return { result, analysisResult: result, analysisId: id, resultTab: "analysis" };
+  // For analysis results, also add the chat version to chatMessages
+  const chatVersion = toChatResult(result);
+  return (state: AnalysisState) => {
+    const exists = state.chatMessages.some(msg => msg.query === result.query);
+    return {
+      result,
+      analysisResult: result,
+      analysisId: id,
+      chatResult: chatVersion,
+      chatId: id,
+      resultTab: "chat",
+      chatMessages: exists ? state.chatMessages : [...state.chatMessages, chatVersion],
+    };
+  };
 }
 
 function threadResults(analyses: AnalysisRow[]): {
   chatResult: AnalysisResult | null;
+  chatMessages: AnalysisResult[];
   chatId: string | null;
   analysisResult: AnalysisResult | null;
   analysisId: string | null;
 } {
   let chatResult: AnalysisResult | null = null;
   let chatId: string | null = null;
+  const chatMessages: AnalysisResult[] = [];
+  const seenQueries = new Set<string>();
   let analysisResult: AnalysisResult | null = null;
   let analysisId: string | null = null;
   for (const row of analyses) {
@@ -109,12 +153,23 @@ function threadResults(analyses: AnalysisRow[]): {
     if (row.result.kind === "chat") {
       chatResult = row.result;
       chatId = row.id;
+      if (!seenQueries.has(row.result.query)) {
+        chatMessages.push(row.result);
+        seenQueries.add(row.result.query);
+      }
     } else {
       analysisResult = row.result;
       analysisId = row.id;
+      chatResult = toChatResult(row.result);
+      chatId = row.id;
+      const chatVersion = toChatResult(row.result);
+      if (!seenQueries.has(row.result.query)) {
+        chatMessages.push(chatVersion);
+        seenQueries.add(row.result.query);
+      }
     }
   }
-  return { chatResult, chatId, analysisResult, analysisId };
+  return { chatResult, chatId, analysisResult, analysisId, chatMessages };
 }
 
 function applyThread(conversation: Conversation, focus: AnalysisRow, set: Setter, get: Getter): void {
@@ -122,7 +177,7 @@ function applyThread(conversation: Conversation, focus: AnalysisRow, set: Setter
   const picked = threadResults(analyses);
   const completed = [...analyses].reverse().find((row) => row.result);
   const shown = focus.result ? focus : completed;
-  const resultTab = shown?.result?.kind === "chat" ? "chat" : shown?.result ? "analysis" : "chat";
+  const resultTab = picked.chatResult ? "chat" : shown?.result ? "analysis" : "chat";
   const running = focus.status === "running";
   const current = get();
   set({
@@ -156,7 +211,11 @@ function attachSocket(analysisId: string, set: Setter, get: Getter): void {
     const payload = JSON.parse(message.data) as AgentEvent;
 
     if (payload.step === "done" && payload.result) {
-      set({ ...storedResult(payload.result, analysisId), busy: false });
+      const resultUpdate = storedResult(payload.result, analysisId);
+      set((state) => ({
+        ...(typeof resultUpdate === "function" ? resultUpdate(state) : resultUpdate),
+        busy: false,
+      }));
       void get().loadHistory();
       socket.close();
       return;
@@ -188,6 +247,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   events: [],
   result: null,
   chatResult: null,
+  chatMessages: [],
   analysisResult: null,
   chatId: null,
   analysisId: null,
@@ -215,7 +275,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       events: [],
       result: null,
       chatResult: null,
+  chatMessages: [],
       analysisResult: null,
+      chatMessages: [],
       chatId: null,
       analysisId: null,
       resultTab: "chat",
@@ -250,7 +312,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           events: [],
           result: null,
           chatResult: null,
+  chatMessages: [],
           analysisResult: null,
+          chatMessages: [],
           chatId: null,
           analysisId: null,
           resultTab: "chat",
@@ -281,7 +345,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           error: "",
           result: null,
           chatResult: null,
+  chatMessages: [],
           analysisResult: null,
+          chatMessages: [],
           chatId: null,
           analysisId: null,
           resultTab: "chat",
@@ -309,7 +375,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
           events: [],
           result: null,
           chatResult: null,
+  chatMessages: [],
           analysisResult: null,
+          chatMessages: [],
           chatId: null,
           analysisId: null,
           resultTab: "chat",

@@ -132,7 +132,7 @@ def conversation_history(analysis_id: str) -> list[dict]:
             continue
         result = item.get("result") or {}
         report = result.get("report") or {}
-        reply = (report.get("briefing") or "").strip()
+        reply = (report.get("chat_message") or report.get("briefing") or "").strip()
         if not reply:
             continue
         summary = result.get("summary") or {}

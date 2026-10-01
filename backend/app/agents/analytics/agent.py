@@ -231,6 +231,34 @@ def revise_report(
     return report
 
 
+def build_chat_message(query: str, scope: dict, datasets: list[dict], summary: dict, report: dict) -> str:
+    metrics = summary.get("metrics", [])[:3]
+    insights = report.get("insights", [])[:2]
+    titles = ", ".join(item.get("title", "a dataset") for item in datasets[:2]) or "available datasets"
+    years = f"{scope.get('year_from')}-{scope.get('year_to')}"
+
+    greeting = f"Here's what I found for your question on {query.lower().rstrip('?')} for {years}:"
+
+    if metrics:
+        highlights = " Key figures: "
+        highlights += ", ".join(
+            f"{m['label']} is {m['value']:,.1f}{m['unit']} ({m['detail']})" for m in metrics
+        )
+        greeting += highlights
+    if insights:
+        greeting += " " + " ".join(insights)
+
+    greeting += f" I pulled this from {titles}. "
+
+    correlations = summary.get("correlations", [])[:1]
+    if correlations:
+        corr = correlations[0]
+        greeting += f"Notably, {corr['a']} and {corr['b']} show a {corr['strength']} association (r={corr['r']:.2f}). "
+
+    greeting += "You can switch to the Analysis tab above to see the full charts, metrics, and citations. Feel free to ask a follow-up!"
+    return greeting
+
+
 def build_result(
     query: str,
     scope: dict,
@@ -240,6 +268,7 @@ def build_result(
     summary: dict,
     report: dict,
 ) -> dict:
+    chat_message = build_chat_message(query, scope, datasets, summary, report)
     return {
         "kind": "data",
         "query": query,
@@ -251,5 +280,8 @@ def build_result(
             "charts": summary["charts"],
             "correlations": summary.get("correlations", []),
         },
-        "report": report,
+        "report": {
+            **report,
+            "chat_message": chat_message,
+        },
     }

@@ -103,6 +103,7 @@ export type AnalysisResult = {
     title: string;
     insights: string[];
     briefing: string;
+    chat_message?: string;
     citations: string[];
     llm_provider: string;
     llm_providers?: string[];

@@ -19,6 +19,7 @@ import {
   Tabs,
   Text,
 } from "@chakra-ui/react";
+import { useEffect, useRef } from "react";
 
 import { BriefingPanel } from "./BriefingPanel";
 import { ChartBlock } from "./ChartBlock";
@@ -31,13 +32,36 @@ import type { AnalysisResult } from "../types/analysis";
 
 function ChatReply({ result }: { result: AnalysisResult }) {
   return (
-    <Stack spacing={2}>
-      <Text fontSize="xs" color="fg.muted">
-        General agent
-      </Text>
-      <Text whiteSpace="pre-wrap" fontSize="sm" lineHeight="tall">
-        {result.report.briefing}
-      </Text>
+    <Stack spacing={3}>
+      <Box>
+        <Text fontSize="xs" color="fg.muted" mb={1}>
+          You
+        </Text>
+        <Text 
+          fontSize="sm" 
+          bg="bg.subtle" 
+          p={3} 
+          rounded="md"
+          fontWeight="medium"
+        >
+          {result.query}
+        </Text>
+      </Box>
+      <Box>
+        <Text fontSize="xs" color="fg.muted" mb={1}>
+          General agent
+        </Text>
+        <Text 
+          whiteSpace="pre-wrap" 
+          fontSize="sm" 
+          lineHeight="tall"
+          p={3}
+          bg="bg.muted"
+          rounded="md"
+        >
+          {result.report.briefing}
+        </Text>
+      </Box>
     </Stack>
   );
 }
@@ -141,10 +165,17 @@ function AnalysisView({ result }: { result: AnalysisResult }) {
 }
 
 export function ResultPanel() {
-  const chatResult = useAnalysisStore((state) => state.chatResult);
+  const chatMessages = useAnalysisStore((state) => state.chatMessages);
   const analysisResult = useAnalysisStore((state) => state.analysisResult);
   const resultTab = useAnalysisStore((state) => state.resultTab);
   const setResultTab = useAnalysisStore((state) => state.setResultTab);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
 
   return (
     <Panel title="Results">
@@ -160,13 +191,29 @@ export function ResultPanel() {
         </TabList>
         <TabPanels>
           <TabPanel px={0}>
-            {chatResult ? (
-              <ChatReply result={chatResult} />
-            ) : (
-              <Text fontSize="sm" color="fg.muted">
-                No conversation yet. Send a general message to chat.
-              </Text>
-            )}
+            <Box
+              ref={scrollRef}
+              maxH="600px"
+              overflowY="auto"
+              borderWidth="1px"
+              borderColor="border.subtle"
+              rounded="md"
+              p={4}
+            >
+              {chatMessages.length > 0 ? (
+                <Stack spacing={4}>
+                  {chatMessages.map((msg, index) => (
+                    <Box key={index} borderBottom={index < chatMessages.length - 1 ? "1px" : "none"} borderColor="border.subtle" pb={index < chatMessages.length - 1 ? 4 : 0}>
+                      <ChatReply result={msg} />
+                    </Box>
+                  ))}
+                </Stack>
+              ) : (
+                <Text fontSize="sm" color="fg.muted">
+                  No conversation yet. Send a general message to chat.
+                </Text>
+              )}
+            </Box>
           </TabPanel>
           <TabPanel px={0}>
             {analysisResult ? (
