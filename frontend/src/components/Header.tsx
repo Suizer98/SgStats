@@ -21,7 +21,7 @@ import {
 
 import { HistoryPanel } from "./HistoryPanel";
 import { MenuIcon, MoonIcon, SunIcon } from "./icons";
-import { useAnalysisStore } from "../store/analysisStore";
+import { useChatStore } from "../store/chatStore";
 import type { AnalysisResult } from "../types/analysis";
 
 function llmLabel(result: AnalysisResult | null): string {
@@ -58,8 +58,8 @@ function ColorModeRow() {
 }
 
 export function Header() {
-  const apiOnline = useAnalysisStore((state) => state.apiOnline);
-  const result = useAnalysisStore((state) => state.result);
+  const apiOnline = useChatStore((state) => state.apiOnline);
+  const result = useChatStore((state) => state.result);
   const models = llmLabel(result);
   const historyDrawer = useDisclosure();
 

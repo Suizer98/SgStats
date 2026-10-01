@@ -12,7 +12,7 @@ import {
 
 import { agentBlurb, agentOrder } from "../constants";
 import { Panel } from "./Panel";
-import { useAnalysisStore } from "../store/analysisStore";
+import { useChatStore } from "../store/chatStore";
 import { clockTime, labelCase } from "../utils/format";
 
 function stepColor(step: string): string {
@@ -62,9 +62,9 @@ function AgentSteps({ order, seen, busy }: { order: string[]; seen: string[]; bu
 }
 
 export function AgentActivity() {
-  const events = useAnalysisStore((state) => state.events);
-  const busy = useAnalysisStore((state) => state.busy);
-  const startedAt = useAnalysisStore((state) => state.startedAt);
+  const events = useChatStore((state) => state.events);
+  const busy = useChatStore((state) => state.busy);
+  const startedAt = useChatStore((state) => state.startedAt);
   const elapsed = useElapsed(startedAt, busy);
   const scroller = useRef<HTMLDivElement>(null);
 

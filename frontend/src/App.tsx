@@ -5,11 +5,11 @@ import { AgentActivity } from "./components/AgentActivity";
 import { Header } from "./components/Header";
 import { QueryForm } from "./components/QueryForm";
 import { ResultPanel } from "./components/ResultPanel";
-import { useAnalysisStore } from "./store/analysisStore";
+import { useChatStore } from "./store/chatStore";
 
 export default function App() {
-  const loadHistory = useAnalysisStore((state) => state.loadHistory);
-  const checkHealth = useAnalysisStore((state) => state.checkHealth);
+  const loadHistory = useChatStore((state) => state.loadHistory);
+  const checkHealth = useChatStore((state) => state.checkHealth);
 
   useEffect(() => {
     void loadHistory();

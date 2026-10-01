@@ -28,6 +28,7 @@ import { DatasetPanel } from "./DatasetPanel";
 import { MetricCards } from "./MetricCards";
 import { Panel } from "./Panel";
 import { useAnalysisStore } from "../store/analysisStore";
+import { useChatStore } from "../store/chatStore";
 import type { AnalysisResult } from "../types/analysis";
 
 function ChatReply({ result }: { result: AnalysisResult }) {
@@ -165,7 +166,7 @@ function AnalysisView({ result }: { result: AnalysisResult }) {
 }
 
 export function ResultPanel() {
-  const chatMessages = useAnalysisStore((state) => state.chatMessages);
+  const chatMessages = useChatStore((state) => state.chatMessages);
   const analysisResult = useAnalysisStore((state) => state.analysisResult);
   const resultTab = useAnalysisStore((state) => state.resultTab);
   const setResultTab = useAnalysisStore((state) => state.setResultTab);

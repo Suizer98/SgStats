@@ -16,7 +16,7 @@ import {
   useDisclosure,
 } from "@chakra-ui/react";
 
-import { useAnalysisStore } from "../store/analysisStore";
+import { useChatStore } from "../store/chatStore";
 import type { Conversation } from "../types/analysis";
 import { relativeTime } from "../utils/format";
 
@@ -33,13 +33,13 @@ function threadStatus(thread: Conversation): string {
 }
 
 export function HistoryPanel({ onOpenItem }: { onOpenItem?: () => void }) {
-  const history = useAnalysisStore((state) => state.history);
-  const filter = useAnalysisStore((state) => state.historyFilter);
-  const conversationId = useAnalysisStore((state) => state.conversationId);
-  const setHistoryFilter = useAnalysisStore((state) => state.setHistoryFilter);
-  const openHistory = useAnalysisStore((state) => state.openHistory);
-  const deleteHistory = useAnalysisStore((state) => state.deleteHistory);
-  const clearHistory = useAnalysisStore((state) => state.clearHistory);
+  const history = useChatStore((state) => state.history);
+  const filter = useChatStore((state) => state.historyFilter);
+  const conversationId = useChatStore((state) => state.conversationId);
+  const setHistoryFilter = useChatStore((state) => state.setHistoryFilter);
+  const openHistory = useChatStore((state) => state.openHistory);
+  const deleteHistory = useChatStore((state) => state.deleteHistory);
+  const clearHistory = useChatStore((state) => state.clearHistory);
   const confirmClear = useDisclosure();
   const cancelRef = useRef<HTMLButtonElement>(null);
 

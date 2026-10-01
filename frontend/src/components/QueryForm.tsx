@@ -21,17 +21,18 @@ import { sampleQueries } from "../constants";
 import { NewChatIcon } from "./icons";
 import { Panel } from "./Panel";
 import { useAnalysisStore } from "../store/analysisStore";
+import { useChatStore } from "../store/chatStore";
 
 export function QueryForm() {
-  const query = useAnalysisStore((state) => state.query);
-  const busy = useAnalysisStore((state) => state.busy);
-  const error = useAnalysisStore((state) => state.error);
-  const conversationId = useAnalysisStore((state) => state.conversationId);
+  const query = useChatStore((state) => state.query);
+  const busy = useChatStore((state) => state.busy);
+  const error = useChatStore((state) => state.error);
+  const conversationId = useChatStore((state) => state.conversationId);
   const analysisResult = useAnalysisStore((state) => state.analysisResult);
-  const setQuery = useAnalysisStore((state) => state.setQuery);
-  const startConversation = useAnalysisStore((state) => state.startConversation);
-  const runAnalysis = useAnalysisStore((state) => state.runAnalysis);
-  const abortRun = useAnalysisStore((state) => state.abortRun);
+  const setQuery = useChatStore((state) => state.setQuery);
+  const startConversation = useChatStore((state) => state.startConversation);
+  const runAnalysis = useChatStore((state) => state.runAnalysis);
+  const abortRun = useChatStore((state) => state.abortRun);
 
   function submit(event: FormEvent) {
     event.preventDefault();
