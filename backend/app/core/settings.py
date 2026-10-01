@@ -27,10 +27,3 @@ def chat_model_ids() -> list[str]:
     if GROQ_MODEL:
         models.append(f"groq/{GROQ_MODEL}")
     return models
-
-
-def fast_chat_model_ids() -> list[str]:
-    models = chat_model_ids()
-    groq = [model for model in models if model.startswith("groq/")]
-    others = [model for model in models if model not in groq]
-    return groq + others

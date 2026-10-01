@@ -1,4 +1,4 @@
-"""LLM-specific tests: hallucination detection, structured output, fallback, revision and consistency.
+"""LLM-specific tests: hallucination detection, structured output, provider reporting, revision and consistency.
 
 A LangChain fake chat model stands in for the gateway, so the real prompt, parser and
 grounding code run without a network call. The live test at the bottom is opt-in.
@@ -92,6 +92,7 @@ def test_hallucinated_draft_is_revised_through_the_graph(monkeypatch: pytest.Mon
     use_fake_model(
         monkeypatch,
         [
+            json.dumps({"kind": "data", "reason": "Needs fresh statistics."}),
             json.dumps({"datasets": ["datagov:d_293a874aff064ea9408f31c4da9dd4bb"], "rationale": "Employment by industry."}),
             briefing("ICT employment jumped 918.4% in 2024."),
             briefing("ICT employment was reported for 2020 to 2024 in the cited series."),
@@ -162,23 +163,14 @@ def test_bifrost_config_stores_logs_and_settings_in_postgres():
     assert logs["config"]["host"] == stored["config"]["host"] == "postgres"
 
 
-def test_gateway_requests_groq_as_fallback(monkeypatch: pytest.MonkeyPatch):
+def test_gateway_requests_only_the_configured_model(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "BIFROST_URL", "http://bifrost:8080")
     monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-test")
     monkeypatch.setattr(settings, "GROQ_MODEL", "groq-test")
     model = client.make_chat_model()
     assert model.model_name == "gemini/gemini-test"
-    assert model.extra_body == {"fallbacks": ["groq/groq-test"]}
-    assert str(model.openai_api_base).endswith("/v1")
-
-
-def test_single_provider_has_no_fallback(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(settings, "BIFROST_URL", "http://bifrost:8080")
-    monkeypatch.setattr(settings, "GEMINI_MODEL", "")
-    monkeypatch.setattr(settings, "GROQ_MODEL", "groq-test")
-    model = client.make_chat_model()
-    assert model.model_name == "groq/groq-test"
     assert not model.extra_body
+    assert str(model.openai_api_base).endswith("/v1")
 
 
 def test_provider_log_lists_gemini_then_groq():

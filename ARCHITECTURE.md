@@ -112,7 +112,7 @@ This is the ReAct pattern: each agent emits a thought, takes an action with a to
 
 ## LLM layer
 
-`app/llm/client.py` is a generic LangChain wrapper with no domain prompts. `complete(system, human, schema, variables)` builds a `ChatPromptTemplate`, calls a `ChatOpenAI` model pointed at Bifrost, parses the reply with `PydanticOutputParser`, and returns the parsed body, the provider that answered and token usage. The model id is `gemini/<GEMINI_MODEL>` with `extra_body={"fallbacks": ["groq/<GROQ_MODEL>"]}`, so fallback happens inside the gateway on a single request.
+`app/llm/client.py` is a generic LangChain wrapper with no domain prompts. `complete(system, human, schema, variables)` builds a `ChatPromptTemplate`, calls a `ChatOpenAI` model pointed at Bifrost with a single model id (`gemini/<GEMINI_MODEL>`, or the first id from `chat_model_ids()`), parses the reply with `PydanticOutputParser`, and returns the parsed body, the provider that answered and token usage. Provider routing and failover stay in Bifrost's own configuration, so the client never names a fallback model.
 
 Prompts live with their agents: dataset planning in the coordinator and briefing in analytics. Adding a provider means adding it to Bifrost and to `chat_model_ids()`.
 

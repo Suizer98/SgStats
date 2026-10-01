@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.types import Emit
 from app.constants import DATA_CUES, EDIT_CUES, SYNONYMS
-from app.core import settings, store
+from app.core import store
 from app.gov import data
 from app.llm.client import complete
 
@@ -103,7 +103,6 @@ def classify(query: str, history: list[dict], emit: Emit) -> str:
             schema=Intent,
             variables={"query": query, "outline": thread_outline(history)},
             timeout=12,
-            models=settings.fast_chat_model_ids(),
         )
         parsed = str(answer["body"].get("kind") or "").lower()
         if parsed in {"data", "chat"}:
@@ -213,7 +212,6 @@ def converse(query: str, history: list[dict], emit: Emit) -> dict:
                 "analysis": analysis_block(latest) if latest else "none",
             },
             timeout=12,
-            models=settings.fast_chat_model_ids(),
         )
         message = answer["body"].get("message") or local_reply(query, latest)
         provider = answer["provider"]

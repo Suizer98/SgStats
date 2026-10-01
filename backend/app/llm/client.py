@@ -1,6 +1,8 @@
 """OpenAI-compatible chat client used by the agents.
 
 The base URL is whatever gateway is configured (Bifrost in this deployment).
+One model is requested; the gateway decides how to route or retry across the
+providers it is configured with, so this layer never names a fallback model.
 Prompts and output schemas stay in the agent that needs them.
 """
 
@@ -52,17 +54,14 @@ def gateway_base() -> str:
 
 def make_chat_model(
     timeout: float | None = None,
-    models: list[str] | None = None,
     max_tokens: int | None = None,
 ) -> BaseChatModel | None:
     if not settings.BIFROST_URL:
         return None
-    chosen = models if models is not None else settings.chat_model_ids()
+    chosen = settings.chat_model_ids()
     if not chosen:
         return None
     kwargs: dict = {}
-    if len(chosen) > 1:
-        kwargs["extra_body"] = {"fallbacks": chosen[1:]}
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     return ChatOpenAI(
@@ -94,12 +93,9 @@ def complete(
     schema: type[BaseModel],
     variables: dict,
     timeout: float | None = None,
-    models: list[str] | None = None,
     max_tokens: int | None = None,
 ) -> dict:
     kwargs = {}
-    if models is not None:
-        kwargs["models"] = models
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     model = make_chat_model(timeout, **kwargs)
