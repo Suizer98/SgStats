@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 import { Box, Container, Flex, Stack } from "@chakra-ui/react";
 
-import { AgentActivity } from "./components/AgentActivity";
-import { Header } from "./components/Header";
-import { QueryForm } from "./components/QueryForm";
-import { ResultPanel } from "./components/ResultPanel";
+import { AgentActivity } from "./components/chat/AgentActivity";
+import { QueryForm } from "./components/chat/QueryForm";
+import { ResultPanel } from "./components/analysis/ResultPanel";
+import { Header } from "./components/main/Header";
 import { useChatStore } from "./store/chatStore";
 
 export default function App() {
