@@ -19,48 +19,42 @@ import {
   Tabs,
   Text,
 } from "@chakra-ui/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { QueryForm } from "../chat/QueryForm";
 import { BriefingPanel } from "./BriefingPanel";
 import { ChartBlock } from "../plot/ChartBlock";
 import { CorrelationTable } from "./CorrelationTable";
 import { DatasetPanel } from "./DatasetPanel";
 import { MetricCards } from "./MetricCards";
+import { NewChatIcon } from "../common/icons";
 import { Panel } from "../common/Panel";
 import { useAnalysisStore } from "../../store/analysisStore";
 import { useChatStore } from "../../store/chatStore";
 import type { AnalysisResult } from "../../types/analysis";
 
-function ChatReply({ result }: { result: AnalysisResult }) {
+function replyText(result: AnalysisResult): string {
+  if (result.kind === "chat") return result.report.briefing;
+  return result.report.chat_message || result.report.briefing;
+}
+
+function Turn({ result }: { result: AnalysisResult }) {
   return (
-    <Stack spacing={3}>
+    <Stack spacing={4}>
       <Box>
         <Text fontSize="xs" color="fg.muted" mb={1}>
           You
         </Text>
-        <Text 
-          fontSize="sm" 
-          bg="bg.subtle" 
-          p={3} 
-          rounded="md"
-          fontWeight="medium"
-        >
+        <Text fontSize="sm" bg="bg.subtle" p={3} rounded="md" fontWeight="medium">
           {result.query}
         </Text>
       </Box>
       <Box>
         <Text fontSize="xs" color="fg.muted" mb={1}>
-          General agent
+          SgStats
         </Text>
-        <Text 
-          whiteSpace="pre-wrap" 
-          fontSize="sm" 
-          lineHeight="tall"
-          p={3}
-          bg="bg.muted"
-          rounded="md"
-        >
-          {result.report.briefing}
+        <Text whiteSpace="pre-wrap" fontSize="sm" lineHeight="tall" p={3} bg="bg.muted" rounded="md">
+          {replyText(result)}
         </Text>
       </Box>
     </Stack>
@@ -88,9 +82,9 @@ function AnalysisView({ result }: { result: AnalysisResult }) {
               Export
             </MenuButton>
             <MenuList>
-              <MenuItem onClick={() => exportResult("markdown")}>Briefing with citations (Markdown)</MenuItem>
-              <MenuItem onClick={() => exportResult("json")}>Full report (JSON)</MenuItem>
-              <MenuItem onClick={() => exportResult("csv")}>Dataset records (CSV)</MenuItem>
+            <MenuItem onClick={() => exportResult("markdown", result)}>Briefing with citations (Markdown)</MenuItem>
+            <MenuItem onClick={() => exportResult("json", result)}>Full report (JSON)</MenuItem>
+            <MenuItem onClick={() => exportResult("csv", result)}>Dataset records (CSV)</MenuItem>
             </MenuList>
           </Menu>
         </HStack>
@@ -167,66 +161,106 @@ function AnalysisView({ result }: { result: AnalysisResult }) {
 
 export function ResultPanel() {
   const chatMessages = useChatStore((state) => state.chatMessages);
-  const analysisResult = useAnalysisStore((state) => state.analysisResult);
-  const resultTab = useAnalysisStore((state) => state.resultTab);
-  const setResultTab = useAnalysisStore((state) => state.setResultTab);
+  const pendingQuery = useChatStore((state) => state.pendingQuery);
+  const busy = useChatStore((state) => state.busy);
+  const conversationId = useChatStore((state) => state.conversationId);
+  const startConversation = useChatStore((state) => state.startConversation);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const hasThread = chatMessages.length > 0 || Boolean(pendingQuery);
+  const pinned = [...chatMessages].reverse().find((turn) => turn.result.kind !== "chat" && turn.result.datasets.length > 0);
+  const [tab, setTab] = useState(0);
+  const latestId = chatMessages[chatMessages.length - 1]?.id;
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [chatMessages]);
+  }, [chatMessages, pendingQuery]);
+
+  useEffect(() => {
+    const latest = chatMessages[chatMessages.length - 1]?.result;
+    if (!latest) return;
+    setTab(latest.kind !== "chat" && latest.datasets.length > 0 ? 1 : 0);
+  }, [latestId, chatMessages]);
 
   return (
-    <Panel title="Results">
-      <Tabs
-        colorScheme="brand"
-        variant="line"
-        index={resultTab === "chat" ? 0 : 1}
-        onChange={(index) => setResultTab(index === 0 ? "chat" : "analysis")}
-      >
-        <TabList borderColor="border.subtle">
-          <Tab>Chat</Tab>
-          <Tab>Analysis</Tab>
-        </TabList>
-        <TabPanels>
-          <TabPanel px={0}>
-            <Box
-              ref={scrollRef}
-              maxH="600px"
-              overflowY="auto"
-              borderWidth="1px"
-              borderColor="border.subtle"
-              rounded="md"
-              p={4}
-            >
-              {chatMessages.length > 0 ? (
-                <Stack spacing={4}>
-                  {chatMessages.map((msg, index) => (
-                    <Box key={index} borderBottom={index < chatMessages.length - 1 ? "1px" : "none"} borderColor="border.subtle" pb={index < chatMessages.length - 1 ? 4 : 0}>
-                      <ChatReply result={msg} />
-                    </Box>
-                  ))}
-                </Stack>
-              ) : (
-                <Text fontSize="sm" color="fg.muted">
-                  No conversation yet. Send a general message to chat.
-                </Text>
-              )}
-            </Box>
-          </TabPanel>
-          <TabPanel px={0}>
-            {analysisResult ? (
-              <AnalysisView result={analysisResult} />
-            ) : (
-              <Text fontSize="sm" color="fg.muted">
-                No analysis yet. Ask a statistics question to see metrics, charts and the briefing.
-              </Text>
-            )}
-          </TabPanel>
-        </TabPanels>
-      </Tabs>
+    <Panel
+      title={hasThread ? "Conversation" : "Ask a policy question"}
+      caption={
+        hasThread
+          ? "A follow-up stays in this thread. Start a new conversation to fetch different data."
+          : "Statistics questions use the data agents. General chat stays a normal conversation."
+      }
+      action={
+        <HStack spacing={2}>
+          {conversationId && (
+            <Badge colorScheme="brand" title={conversationId}>
+              thread {conversationId.slice(0, 8)}
+            </Badge>
+          )}
+          <Button
+            size="xs"
+            variant="ghost"
+            colorScheme="brand"
+            leftIcon={<NewChatIcon />}
+            onClick={startConversation}
+            isDisabled={busy || !hasThread}
+          >
+            New conversation
+          </Button>
+        </HStack>
+      }
+    >
+      <Stack spacing={4}>
+        {hasThread ? (
+          <Tabs colorScheme="brand" variant="line" index={tab} onChange={setTab}>
+            <TabList borderColor="border.subtle">
+              <Tab>Chat</Tab>
+              <Tab>Analysis</Tab>
+            </TabList>
+            <TabPanels>
+              <TabPanel px={0}>
+                <Box ref={scrollRef} maxH="calc(100vh - 320px)" overflowY="auto">
+                  <Stack spacing={6}>
+                    {chatMessages.map((turn) => (
+                      <Box key={turn.id} borderBottomWidth="1px" borderColor="border.subtle" pb={6}>
+                        <Turn result={turn.result} />
+                      </Box>
+                    ))}
+                    {pendingQuery && (
+                      <Box>
+                        <Text fontSize="xs" color="fg.muted" mb={1}>
+                          You
+                        </Text>
+                        <Text fontSize="sm" bg="bg.subtle" p={3} rounded="md" fontWeight="medium">
+                          {pendingQuery}
+                        </Text>
+                        <Text fontSize="sm" color="fg.muted" mt={3}>
+                          Working on this now.
+                        </Text>
+                      </Box>
+                    )}
+                  </Stack>
+                </Box>
+                <Box mt={4}>
+                  <QueryForm compact />
+                </Box>
+              </TabPanel>
+              <TabPanel px={0}>
+                {pinned ? (
+                  <AnalysisView result={pinned.result} />
+                ) : (
+                  <Text fontSize="sm" color="fg.muted">
+                    No analysis yet. Ask a statistics question to see the chart.
+                  </Text>
+                )}
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
+        ) : (
+          <QueryForm />
+        )}
+      </Stack>
     </Panel>
   );
 }

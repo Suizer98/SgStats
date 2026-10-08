@@ -257,7 +257,7 @@ def build_chat_message(query: str, scope: dict, datasets: list[dict], summary: d
         corr = correlations[0]
         greeting += f"Notably, {corr['a']} and {corr['b']} show a {corr['strength']} association (r={corr['r']:.2f}). "
 
-    greeting += "You can switch to the Analysis tab above to see the full charts, metrics, and citations. Feel free to ask a follow-up!"
+    greeting += "The chart is on the Analysis tab. Feel free to ask a follow-up!"
     return greeting
 
 

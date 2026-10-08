@@ -109,17 +109,17 @@ To see failure handling, run `docker compose stop gov-mcp` and submit a query. T
 
 ## Screenshots
 
-Analysis in progress. The send button becomes Abort, and agent steps stream in on the right:
+A question in progress. The send button becomes Abort, and agent steps stream in on the right:
 
-![Births query running, with Abort and coordinator thoughts](screenshots/running.jpeg)
+![CPI question running, with Abort and live agent steps](screenshots/running.jpeg)
 
 Finished analysis, with metrics, charts and the agent log:
 
-![EP workforce analysis with charts and agent activity](screenshots/analysis.png)
+![HDB resale analysis with charts and agent activity](screenshots/analysis.jpeg)
 
-History keeps each conversation as one item:
+The Chat tab keeps the written reply and the follow-up box:
 
-![History drawer with saved analysis threads](screenshots/chat.jpeg)
+![HDB resale chat reply with the follow-up box](screenshots/chat.jpeg)
 
 Bifrost logs every model call. Here Gemini failed and Groq answered the same request:
 

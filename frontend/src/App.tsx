@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { Box, Container, Flex, Stack } from "@chakra-ui/react";
 
 import { AgentActivity } from "./components/chat/AgentActivity";
-import { QueryForm } from "./components/chat/QueryForm";
 import { ResultPanel } from "./components/analysis/ResultPanel";
 import { Header } from "./components/main/Header";
 import { useChatStore } from "./store/chatStore";
@@ -22,17 +21,14 @@ export default function App() {
     <Box minH="100vh">
       <Header />
       <Container maxW="8xl" py={{ base: 5, md: 8 }}>
-        <Stack spacing={{ base: 5, md: 6 }}>
-          <QueryForm />
-          <Flex gap={6} direction={{ base: "column", xl: "row" }} align="flex-start">
-            <Box flex="2" w="100%" minW={0}>
-              <ResultPanel />
-            </Box>
-            <Stack flex="1" w="100%" spacing={6}>
-              <AgentActivity />
-            </Stack>
-          </Flex>
-        </Stack>
+        <Flex gap={6} direction={{ base: "column", xl: "row" }} align="flex-start">
+          <Box flex="2" w="100%" minW={0}>
+            <ResultPanel />
+          </Box>
+          <Stack flex="1" w="100%" spacing={6}>
+            <AgentActivity />
+          </Stack>
+        </Flex>
       </Container>
     </Box>
   );

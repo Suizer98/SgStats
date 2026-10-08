@@ -11,22 +11,23 @@ import {
   fetchConversations,
   fetchHealth,
 } from "../api/analysisApi";
-import { sampleQuery } from "../constants";
 import { useAnalysisStore } from "./analysisStore";
 import type {
   AgentEvent,
   AnalysisResult,
   AnalysisRow,
   Conversation,
+  ThreadTurn,
 } from "../types/analysis";
 import { parseTimestamp } from "../utils/format";
 
 type ChatState = {
   query: string;
+  pendingQuery: string;
   events: AgentEvent[];
   result: AnalysisResult | null;
   chatResult: AnalysisResult | null;
-  chatMessages: AnalysisResult[];
+  chatMessages: ThreadTurn[];
   chatId: string | null;
   history: Conversation[];
   historyFilter: string;
@@ -72,98 +73,63 @@ function sameSocket(analysisId: string): boolean {
   );
 }
 
-function toChatResult(result: AnalysisResult): AnalysisResult {
-  if (result.kind === "chat") return result;
-  return {
-    ...result,
-    kind: "chat",
-    report: {
-      ...result.report,
-      title: "Conversation",
-      briefing: result.report.chat_message ?? result.report.briefing,
-      insights: [],
-      citations: [],
-    },
-    plan: [],
-    datasets: [],
-    summary: { metrics: [], charts: [], correlations: [] },
-  };
-}
-
-// Clears both the chat-side and analysis-side state for a fresh/empty thread.
 function emptyThreadState(): Partial<ChatState> {
   useAnalysisStore.getState().resetAnalysis();
   return {
     activeId: null,
     events: [],
     result: null,
+    pendingQuery: "",
     chatResult: null,
     chatMessages: [],
     chatId: null,
+    query: "",
   };
+}
+
+function upsertTurn(turns: ThreadTurn[], turn: ThreadTurn): ThreadTurn[] {
+  const index = turns.findIndex((item) => item.id === turn.id);
+  if (index === -1) return [...turns, turn];
+  const next = [...turns];
+  next[index] = turn;
+  return next;
 }
 
 type Updater = (state: ChatState) => Partial<ChatState>;
 
 function storedResult(result: AnalysisResult, id: string): Updater {
-  if (result.kind === "chat") {
-    return (state: ChatState) => {
-      const exists = state.chatMessages.some((msg) => msg.query === result.query);
-      return {
-        result,
-        chatResult: result,
-        chatId: id,
-        chatMessages: exists ? state.chatMessages : [...state.chatMessages, result],
-      };
-    };
+  if (result.kind !== "chat") {
+    useAnalysisStore.getState().setAnalysisResult(result, id);
   }
-  // For analysis results, also add the chat version to chatMessages and
-  // push the structured report into the analysis store.
-  const chatVersion = toChatResult(result);
-  useAnalysisStore.getState().setAnalysisResult(result, id);
-  return (state: ChatState) => {
-    const exists = state.chatMessages.some((msg) => msg.query === result.query);
-    return {
-      result,
-      chatResult: chatVersion,
-      chatId: id,
-      chatMessages: exists ? state.chatMessages : [...state.chatMessages, chatVersion],
-    };
-  };
+  return (state: ChatState) => ({
+    result,
+    pendingQuery: "",
+    chatResult: result,
+    chatId: id,
+    chatMessages: upsertTurn(state.chatMessages, { id, result }),
+  });
 }
 
 function threadResults(analyses: AnalysisRow[]): {
   chatResult: AnalysisResult | null;
-  chatMessages: AnalysisResult[];
+  chatMessages: ThreadTurn[];
   chatId: string | null;
   analysisResult: AnalysisResult | null;
   analysisId: string | null;
 } {
   let chatResult: AnalysisResult | null = null;
   let chatId: string | null = null;
-  const chatMessages: AnalysisResult[] = [];
-  const seenQueries = new Set<string>();
+  const chatMessages: ThreadTurn[] = [];
   let analysisResult: AnalysisResult | null = null;
   let analysisId: string | null = null;
   for (const row of analyses) {
     if (!row.result) continue;
-    if (row.result.kind === "chat") {
-      chatResult = row.result;
-      chatId = row.id;
-      if (!seenQueries.has(row.result.query)) {
-        chatMessages.push(row.result);
-        seenQueries.add(row.result.query);
-      }
-    } else {
+    chatMessages.push({ id: row.id, result: row.result });
+    chatResult = row.result;
+    chatId = row.id;
+    if (row.result.kind !== "chat") {
       analysisResult = row.result;
       analysisId = row.id;
-      chatResult = toChatResult(row.result);
-      chatId = row.id;
-      const chatVersion = toChatResult(row.result);
-      if (!seenQueries.has(row.result.query)) {
-        chatMessages.push(chatVersion);
-        seenQueries.add(row.result.query);
-      }
     }
   }
   return { chatResult, chatId, analysisResult, analysisId, chatMessages };
@@ -174,7 +140,6 @@ function applyThread(conversation: Conversation, focus: AnalysisRow, set: Setter
   const picked = threadResults(analyses);
   const completed = [...analyses].reverse().find((row) => row.result);
   const shown = focus.result ? focus : completed;
-  const resultTab = picked.chatResult ? "chat" : shown?.result ? "analysis" : "chat";
   const running = focus.status === "running";
   const current = get();
 
@@ -183,10 +148,10 @@ function applyThread(conversation: Conversation, focus: AnalysisRow, set: Setter
   } else {
     useAnalysisStore.getState().resetAnalysis();
   }
-  useAnalysisStore.getState().setResultTab(resultTab);
 
   set({
-    query: focus.query,
+    query: "",
+    pendingQuery: running ? focus.query : "",
     events:
       focus.id === current.activeId && focus.events.length < current.events.length
         ? current.events
@@ -228,7 +193,12 @@ function attachSocket(analysisId: string, set: Setter, get: Getter): void {
     }
 
     if (payload.step === "error") {
-      set({ error: payload.content || "Analysis failed.", busy: false });
+      set((state) => ({
+        error: payload.content || "Analysis failed.",
+        busy: false,
+        query: state.query || state.pendingQuery,
+        pendingQuery: "",
+      }));
       void get().loadHistory();
       socket.close();
       return;
@@ -249,7 +219,8 @@ function attachSocket(analysisId: string, set: Setter, get: Getter): void {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  query: sampleQuery,
+  query: "",
+  pendingQuery: "",
   events: [],
   result: null,
   chatResult: null,
@@ -370,6 +341,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const request = new AbortController();
     createRequest = request;
     set({
+      query: "",
+      pendingQuery: query,
       busy: true,
       activeId: null,
       error: "",
@@ -387,13 +360,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       void get().loadHistory();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        set({ busy: false, error: "Stopped." });
+        set((state) => ({
+          busy: false,
+          error: "Stopped.",
+          query: state.query || state.pendingQuery,
+          pendingQuery: "",
+        }));
         return;
       }
-      set({
+      set((state) => ({
         error: error instanceof Error ? error.message : "Request failed.",
         busy: false,
-      });
+        query: state.query || state.pendingQuery,
+        pendingQuery: "",
+      }));
     } finally {
       if (createRequest === request) createRequest = null;
     }

@@ -120,6 +120,11 @@ export type AnalysisResult = {
   };
 };
 
+export type ThreadTurn = {
+  id: string;
+  result: AnalysisResult;
+};
+
 export type AnalysisRow = {
   id: string;
   conversation_id: string;

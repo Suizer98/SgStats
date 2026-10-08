@@ -3,16 +3,12 @@ import { create } from "zustand";
 import type { AnalysisResult } from "../types/analysis";
 import { downloadFile, toCsv, toMarkdown } from "../utils/format";
 
-type ResultTab = "chat" | "analysis";
-
 type AnalysisState = {
   analysisResult: AnalysisResult | null;
   analysisId: string | null;
-  resultTab: ResultTab;
-  setResultTab: (tab: ResultTab) => void;
   setAnalysisResult: (result: AnalysisResult, id: string) => void;
   resetAnalysis: () => void;
-  exportResult: (format: "json" | "csv" | "markdown") => void;
+  exportResult: (format: "json" | "csv" | "markdown", source?: AnalysisResult) => void;
 };
 
 function datasetRows(result: AnalysisResult): Record<string, unknown>[] {
@@ -33,16 +29,13 @@ function datasetRows(result: AnalysisResult): Record<string, unknown>[] {
 export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   analysisResult: null,
   analysisId: null,
-  resultTab: "chat",
-
-  setResultTab: (resultTab) => set({ resultTab }),
 
   setAnalysisResult: (result, id) => set({ analysisResult: result, analysisId: id }),
 
-  resetAnalysis: () => set({ analysisResult: null, analysisId: null, resultTab: "chat" }),
+  resetAnalysis: () => set({ analysisResult: null, analysisId: null }),
 
-  exportResult: (format) => {
-    const result = get().analysisResult;
+  exportResult: (format, source) => {
+    const result = source ?? get().analysisResult;
     if (!result) return;
 
     if (format === "csv") {
