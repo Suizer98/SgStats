@@ -39,6 +39,9 @@ STOPWORDS = {
 }
 MEANING_PHRASES = 4
 MEANING_TIMEOUT = 12
+WEB_SEARCH_URL = "https://html.duckduckgo.com/html/"
+WEB_SEARCH_RESULTS = 5
+WEB_SEARCH_TIMEOUT = 8
 
 SECTORS = {
     "technology": "Information and Communications",
@@ -76,7 +79,8 @@ PERIOD_LABELS = re.compile(
 NUMBERS = re.compile(r"(?<![\w.])([+\-\u2010\u2011\u2012\u2013\u2212]?)(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)")
 DATA_CUES = re.compile(
     r"\b(analys|compar|correlat|statistic|dataset|employment|unemploy|wage|salary|cpi|inflation|"
-    r"gdp|hdb|fertility|birth|housing|price|vacanc|workforce|sector|resident|population)\b",
+    r"gdp|hdb|fertility|birth|housing|price|vacanc|workforce|worker|sector|resident|population|"
+    r"how many|how much)\b",
     re.I,
 )
 EDIT_CUES = re.compile(
@@ -88,6 +92,7 @@ MAX_PLAN = 3
 MAX_ATTEMPTS = 4
 PROVIDER_ORDER = ("gemini", "groq")
 INTERRUPTED = "The server restarted before this analysis finished. Run it again."
+EMBED_RETRY = "The embedding model failed, so this search used dataset titles only. Try again in a minute."
 
 PINNED = [
     {

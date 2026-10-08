@@ -11,7 +11,7 @@ export const sampleQuery = sampleQueries[0];
 export const agentOrder = ["coordinator", "extractor", "analytics"];
 
 export const agentBlurb: Record<string, string> = {
-  general: "Handles ordinary conversation when the message is not asking for statistics",
+  general: "Handles ordinary conversation, and can search the web to explain a saved analysis",
   coordinator: "Searches Data.gov.sg, SingStat and the mock internal database, then plans which datasets answer the question",
   extractor: "Fetches each dataset through the MCP tools and normalises its periods and series",
   analytics: "Computes trends and drafts the grounded briefing",

@@ -103,7 +103,7 @@ The suite needs no network or API keys and finishes in about 10 seconds. [TESTIN
 | How many total EP workers in Singapore from 2020 to current | Foreign workforce by pass type from Data.gov.sg |
 | HDB resale prices from 2015 to 2024 | Large transactional dataset aggregated to a time series |
 | Births and fertility trends in Singapore | Demographic series without explicit years |
-| tell me something | Ambiguous question: default datasets with an explanatory note |
+| tell me something | Ambiguous question: no chart and a request for a measurable topic |
 
 To see failure handling, run `docker compose stop gov-mcp` and submit a query. The coordinator reports that search failed, the extractor loads the bundled real snapshots, and the briefing states that the data service was unreachable. Run `docker compose start gov-mcp` to restore it.
 

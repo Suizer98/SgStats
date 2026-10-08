@@ -18,21 +18,37 @@ from app.constants import (
 from app.core import settings
 
 blocked_until = 0.0
+limit_message = ""
 
 
 class QuotaError(RuntimeError):
     pass
 
 
+def rate_limit_text(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except Exception:
+        return (response.text or "").strip()[:300]
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            return str(error["message"]).strip()[:300]
+        if isinstance(error, str) and error.strip():
+            return error.strip()[:300]
+    return (response.text or "").strip()[:300]
+
+
 def rate_limited(provider: str, response: httpx.Response, patient: bool) -> None:
     """Wait out a 429 in batch jobs; in request paths fail fast and pause embedding for the retry window."""
-    global blocked_until
+    global blocked_until, limit_message
+    limit_message = rate_limit_text(response)
     delay = retry_seconds(response)
     if not patient:
         blocked_until = time.time() + (delay or DEFAULT_COOLDOWN)
-        raise QuotaError(f"{provider} rate limited")
+        raise QuotaError(limit_message or f"{provider} rate limited")
     if delay is None:
-        raise QuotaError(response.text[:300])
+        raise QuotaError(limit_message or response.text[:300])
     print(f"{provider} rate limited, retry in {delay:.1f}s", flush=True)
     time.sleep(delay)
 
@@ -83,6 +99,7 @@ def embed_chunk(
     model: str,
     patient: bool,
 ) -> tuple[list[list[float]], str]:
+    global limit_message
     payload: dict = {"model": model, "input": texts}
     if model == GEMINI_EMBED_MODEL:
         payload["dimensions"] = EMBED_DIM
@@ -103,6 +120,7 @@ def embed_chunk(
         data.sort(key=lambda item: item.get("index", 0))
         if len(data) != len(texts):
             raise RuntimeError(f"Gateway returned {len(data)} vectors for {len(texts)} texts")
+        limit_message = ""
         return [item["embedding"] for item in data], str(body.get("model") or model)
 
 
@@ -118,7 +136,10 @@ def retry_seconds(response: httpx.Response) -> float | None:
         body = response.json()
     except Exception:
         return None
-    details = body.get("error", {}).get("details") or []
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    details = (error.get("details") if isinstance(error, dict) else None) or []
     for item in details:
         delay = item.get("retryDelay")
         if isinstance(delay, (int, float)):

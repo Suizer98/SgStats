@@ -25,7 +25,8 @@ def choose_datasets(query: str, candidates: list[dict], year_from: int, year_to:
     answer = complete(
         system=(
             "Choose government datasets that directly measure the question. Use only keys from the candidate "
-            "list, at most 3. A table that breaks the requested group out, such as foreign workforce by pass "
+            "list, at most 3. Only the titles and agencies shown are known: never claim that a candidate contains "
+            "a series or measure that its title does not name. A table that breaks the requested group out, such as foreign workforce by pass "
             "type, is a match even when other groups are in the same table. A single combined total that never "
             "names the group is not. The word worker alone does not make a dataset relevant. Return no keys "
             "when every candidate is only related by a shared word. When two providers each have a series that "
@@ -59,7 +60,7 @@ def plan(query: str, emit: Emit) -> tuple[dict, dict, list[str], dict[str, dict]
         )
     if not terms["phrases"]:
         scope["notes"].append(
-            "No specific topic was recognised in the question, so the default labour market and GDP datasets are shown."
+            "No specific topic was recognised in the question. Ask about a measurable topic such as employment, CPI or housing."
         )
         emit("coordinator", "observation", "The question names no measurable topic. Treating it as ambiguous.")
     emit(
@@ -71,6 +72,9 @@ def plan(query: str, emit: Emit) -> tuple[dict, dict, list[str], dict[str, dict]
     search_failed = False
     try:
         candidates = fetch.search(query, scope["year_from"], scope["year_to"], scope["sector"], phrases)
+        if fetch.embed_note:
+            scope["notes"].append(fetch.embed_note)
+            emit("coordinator", "observation", fetch.embed_note)
     except Exception as error:
         candidates = []
         search_failed = True
@@ -78,18 +82,21 @@ def plan(query: str, emit: Emit) -> tuple[dict, dict, list[str], dict[str, dict]
     if candidates:
         top = "; ".join(f"{item['title']} ({item['provider']})" for item in candidates[:4])
         emit("coordinator", "observation", f"{len(candidates)} candidate datasets. Top matches: {top}.")
-    else:
+    elif search_failed:
         candidates = catalog.pinned_candidates()
-        emit("coordinator", "observation", "No catalog matches. Falling back to the pinned labour and GDP datasets.")
-        if search_failed:
-            scope["notes"].append(
-                "Dataset search was unavailable, so the default labour market and GDP datasets are shown."
-            )
-        elif terms["phrases"]:
-            scope["notes"].append(
-                "No dataset matched the question, so the default labour market and GDP datasets are shown. "
-                "Try naming a topic such as employment, wages, CPI or housing."
-            )
+        emit("coordinator", "observation", "Catalog search was unavailable. Falling back to datasets with offline snapshots.")
+        scope["notes"].append(
+            "Dataset search was unavailable, so datasets with offline snapshots were considered."
+        )
+    else:
+        if fetch.embed_note:
+            note = "No dataset matched the question, so nothing was charted. Try again after the embedding model is available."
+        else:
+            note = "No dataset matched the question, so nothing was charted. Try a more specific description."
+        scope["notes"].append(note)
+        emit("coordinator", "observation", note)
+        emit("coordinator", "action", "No dataset selected.")
+        return scope, terms, [], {}
 
     by_key = {f"{item['provider']}:{item['id']}": item for item in candidates}
     try:

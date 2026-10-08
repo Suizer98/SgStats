@@ -13,7 +13,7 @@ The platform therefore handles four input formats: JSON from both government API
 
 ### Pinned datasets
 
-These are the defaults for ambiguous questions and the only datasets with an offline snapshot.
+These are the only datasets with an offline snapshot. They are considered when catalogue search is unavailable.
 
 | Dataset | Provider | Id | Snapshot |
 | --- | --- | --- | --- |

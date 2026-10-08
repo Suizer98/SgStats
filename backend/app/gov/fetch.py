@@ -153,6 +153,9 @@ def call_mcp(tool: str, arguments: dict) -> dict:
     return mcp.call_tool(tool, arguments)
 
 
+embed_note = ""
+
+
 def search(
     query: str,
     year_from: int,
@@ -160,6 +163,7 @@ def search(
     sector: str | None = None,
     phrases: list[str] | None = None,
 ) -> list[dict]:
+    global embed_note
     if settings.MCP_URL:
         arguments = {
             "query": query,
@@ -168,8 +172,12 @@ def search(
             "sector": sector,
             "phrases": phrases,
         }
-        return call_mcp("search_datasets", arguments)["candidates"]
-    return catalog.search(query, year_from, year_to, sector, phrases)
+        body = call_mcp("search_datasets", arguments)
+        embed_note = str(body.get("embed_note") or "")
+        return body["candidates"]
+    found = catalog.search(query, year_from, year_to, sector, phrases)
+    embed_note = catalog.embed_note
+    return found
 
 
 def extract_one(provider: str, dataset_id: str, year_from: int, year_to: int, query: str = "", title: str = "") -> dict:

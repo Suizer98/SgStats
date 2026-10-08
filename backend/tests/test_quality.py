@@ -38,9 +38,6 @@ def test_outliers_are_flagged_not_removed():
     checked = quality_check(frame([10.0, 11.0, 10.5, 9.8, 10.2, 250.0]), ["period", "value"])
     assert checked["rows"] == 6
     assert checked["outliers"] == [{"series": "A", "period": "2020", "value": 250.0}]
-
-
-def test_flat_series_has_no_outliers():
     assert quality_check(frame([5.0] * 6))["outliers"] == []
 
 

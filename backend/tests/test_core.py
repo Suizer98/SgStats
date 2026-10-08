@@ -1,6 +1,7 @@
 import pytest
 
 from app.agents import check_grounding
+from app.constants import EMBED_RETRY
 from app.core import settings, store
 from app.gov import catalog, data, embed, fetch, sources
 from app.gov.data import current_year, normalize_any, normalize_singstat, parse_period, parse_query, summarise
@@ -127,6 +128,7 @@ def test_search_terms_put_the_model_meaning_first():
 
 
 def test_meaning_phrases_follow_the_model(monkeypatch: pytest.MonkeyPatch):
+    assert catalog.meaning_phrases("How many EP workers") == []
     monkeypatch.setattr(settings, "BIFROST_URL", "http://bifrost:8080")
 
     def fake_text(**kwargs):
@@ -135,10 +137,6 @@ def test_meaning_phrases_follow_the_model(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(catalog, "complete_text", fake_text)
     assert catalog.meaning_phrases("How many EP workers") == ["employment pass", "foreign workforce"]
-
-
-def test_meaning_phrases_skip_when_the_gateway_is_down():
-    assert catalog.meaning_phrases("How many EP workers") == []
 
 
 def test_embedding_prefixes_differ_by_provider():
@@ -171,6 +169,8 @@ def test_retry_delay_comes_from_the_response():
             return {"error": {"message": "quota"}}
 
     assert embed.retry_seconds(Empty()) is None
+    Empty.text = ""
+    assert embed.rate_limit_text(Empty()) == "quota"
 
 
 def test_vector_search_keeps_keyword_scores_behind(monkeypatch: pytest.MonkeyPatch):
@@ -210,8 +210,10 @@ def test_vector_search_keeps_keyword_scores_behind(monkeypatch: pytest.MonkeyPat
             }
         ],
     )
+    monkeypatch.setattr(catalog, "embed_paused_until", 10**12)
     found = catalog.search("How many EP workers", 2020, 2026)
     assert [item["id"] for item in found] == ["ep", "int"]
+    assert catalog.embed_note == ""
 
 
 def test_keyword_search_sorts_when_vectors_are_not_ready(monkeypatch: pytest.MonkeyPatch):
@@ -229,6 +231,11 @@ def test_keyword_search_sorts_when_vectors_are_not_ready(monkeypatch: pytest.Mon
     monkeypatch.setattr(catalog, "search_internal", lambda *args, **kwargs: [])
     found = catalog.search("employment pass", 2020, 2024)
     assert [item["id"] for item in found] == ["high", "low"]
+    assert catalog.embed_note == ""
+    monkeypatch.setattr(catalog, "embed_paused_until", 10**12)
+    monkeypatch.setattr(embed, "limit_message", "Resource has been exhausted (e.g. check quota).")
+    catalog.search("employment pass", 2020, 2024)
+    assert catalog.embed_note == f"{EMBED_RETRY} Rate limit: Resource has been exhausted (e.g. check quota)."
 
 
 def test_catalog_is_stored_in_the_database():
@@ -364,21 +371,13 @@ def test_request_time_embedding_fails_fast_on_rate_limit(monkeypatch: pytest.Mon
     assert len(calls) == 1
 
 
-def test_grounding_rejects_invented_numbers():
-    result = check_grounding("GDP rose by 918.4 percent in 2021", facts=[26.9, 20.2, 185.4])
-    assert result["passed"] is False
-    assert 918.4 in result["unsupported_numbers"]
-
-
-def test_grounding_accepts_known_facts():
-    result = check_grounding("Employment rose 26.9% from 185.4k in 2020.", facts=[26.9, 185.4, 2020])
-    assert result["passed"] is True
-
-
-def test_grounding_handles_separators_scales_and_periods():
-    facts = [187300.0, 5.8]
+def test_grounding_checks_figures_against_facts():
+    invented = check_grounding("GDP rose by 918.4 percent in 2021", facts=[26.9, 20.2, 185.4])
+    assert invented["passed"] is False
+    assert 918.4 in invented["unsupported_numbers"]
+    assert check_grounding("Employment rose 26.9% from 185.4k in 2020.", facts=[26.9, 185.4, 2020])["passed"]
     text = "EP holders reached 187,300 (about 187.3 thousand) in 2022-12, up 5.8% over 2020-2022 and Q4."
-    assert check_grounding(text, facts)["passed"] is True
+    assert check_grounding(text, facts=[187300.0, 5.8])["passed"] is True
 
 
 def test_dataset_detail_includes_series_and_measure():

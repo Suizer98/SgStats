@@ -4,11 +4,18 @@ import re
 
 from pydantic import BaseModel, Field
 
+from app.agents.general.search import search_notes, web_search
 from app.agents.types import Emit
 from app.constants import DATA_CUES, EDIT_CUES
 from app.core import store
 from app.gov import data
 from app.llm.client import complete
+
+COURTESY = re.compile(
+    r"^(?:hi|hello|hey|thanks|thank you|good morning|good afternoon)"
+    r"(?:[\s,.!]+(?:that|this|was|helpful|you))*[\s.!,]*$",
+    re.I,
+)
 
 
 class ChatReply(BaseModel):
@@ -181,9 +188,33 @@ def analysis_block(turn: dict) -> str:
     )
 
 
+def needs_web_search(query: str, latest: dict | None) -> bool:
+    text = query.strip()
+    return bool(latest) and bool(text) and not COURTESY.match(text)
+
+
+def search_text(query: str, latest: dict) -> str:
+    topic = " ".join(str(latest.get("user") or "").split())
+    text = " ".join(query.split())
+    if topic and topic.lower() not in text.lower():
+        text = f"{text} {topic}"
+    return text[:400]
+
+
 def converse(query: str, history: list[dict], emit: Emit) -> dict:
-    emit("general", "thought", "Reply in plain language. Do not fetch datasets or invent figures.")
     latest = latest_data_turn(history)
+    pages = []
+    if needs_web_search(query, latest):
+        emit("general", "thought", "Reply from the saved analysis. Search the web only to explain it.")
+        text = search_text(query, latest)
+        emit("general", "action", f"Search the web for: {text}")
+        pages = web_search(text)
+        if pages:
+            emit("general", "observation", f"Found {len(pages)} web page(s). Figures stay on the saved analysis.")
+        else:
+            emit("general", "observation", "Web search returned nothing. The reply will use the saved analysis only.")
+    else:
+        emit("general", "thought", "Reply in plain language. Do not fetch datasets or invent figures.")
     latest_position = max(
         (position for position, turn in enumerate(history) if turn.get("kind") == "data"),
         default=-1,
@@ -196,17 +227,19 @@ def converse(query: str, history: list[dict], emit: Emit) -> dict:
         answer = complete(
             system=(
                 "You are the general conversation agent for a Singapore public-data workspace. "
-                "Talk naturally. If a latest analysis is provided, answer only from that analysis. "
-                "Use only figures stated there and never fetch, infer or invent new statistics. "
-                "If the answer is not covered, say so and ask the user to start a New conversation for a new analysis. "
+                "Talk naturally. If a latest analysis is provided, keep every figure from that analysis. "
+                "Web notes may explain causes or context. Name the page when you use one. "
+                "Never replace an analysis figure with a number from the web, and never invent a figure. "
+                "Do not fetch datasets. If the question is not covered by the analysis or the web notes, say so. "
                 "Earlier turns are conversational context, not a source of facts."
             ),
-            human="Latest analysis:\n{analysis}\n\nEarlier turns:\n{transcript}\n\nUser: {query}",
+            human="Latest analysis:\n{analysis}\n\nWeb notes:\n{web}\n\nEarlier turns:\n{transcript}\n\nUser: {query}",
             schema=ChatReply,
             variables={
                 "query": query,
                 "transcript": transcript,
                 "analysis": analysis_block(latest) if latest else "none",
+                "web": search_notes(pages),
             },
             timeout=12,
         )

@@ -161,6 +161,7 @@ def test_statistics_question_is_not_sent_to_the_general_agent():
     from app.agents.general.agent import looks_like_data
 
     assert looks_like_data("Analyse employment trends in the technology sector from 2020-2024")
+    assert looks_like_data("How many total EP workers in Singapore from 2020 to current")
     assert not looks_like_data("hello, what can you do?")
     assert not looks_like_data("thanks, that was helpful")
 
@@ -205,16 +206,93 @@ def test_follow_up_edits_the_saved_analysis(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_chat_follow_up_does_not_edit_or_fetch(monkeypatch: pytest.MonkeyPatch):
+    from app.agents.general import agent as general
+
     calls = []
+    searches = []
     monkeypatch.setattr(fetch, "search", lambda *args, **kwargs: calls.append(args))
+    monkeypatch.setattr(general, "web_search", lambda query: searches.append(query) or [])
     result = run("thanks, that was helpful", lambda *event: None, [saved_employment()])
     assert result["kind"] == "chat"
     assert calls == []
+    assert searches == []
+
+
+def test_follow_up_searches_the_web_without_fetching_datasets(monkeypatch: pytest.MonkeyPatch):
+    from app.agents.general import agent as general
+    from app.agents.general import search as web
+
+    page = """
+    <a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.mom.gov.sg%2Fpasses&amp;rut=1">Employment Pass</a>
+    <a class="result__snippet" href="https://example.invalid">For professionals.</a>
+    <a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa">Other</a>
+    <a class="result__snippet" href="https://example.invalid">Nothing useful.</a>
+    """
+
+    class Response:
+        text = page
+
+        def raise_for_status(self):
+            return None
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, data):
+            if data["q"].startswith("down"):
+                raise RuntimeError("down")
+            assert "how come" in data["q"]
+            return Response()
+
+    monkeypatch.setattr(web.httpx, "Client", Client)
+    found = web.web_search("how come EP more than SP")
+    assert found[0]["url"] == "https://www.mom.gov.sg/passes"
+    assert found[0]["title"] == "Employment Pass"
+    assert "professionals" in found[0]["snippet"]
+    assert found[1]["url"] == "https://example.com/a"
+    assert web.web_search("down") == []
+    assert web.web_search("   ") == []
+
+    calls = []
+    searches = []
+
+    def complete(system, human, schema, variables, timeout=None):
+        assert "mom.gov.sg" in variables["web"]
+        assert "Never replace an analysis figure" in system
+        return {
+            "body": {"message": "The chart keeps the saved stocks. MOM describes Employment Pass as a pass for professionals."},
+            "provider": "test",
+            "usage": {},
+        }
+
+    monkeypatch.setattr(fetch, "search", lambda *args, **kwargs: calls.append(args))
+    monkeypatch.setattr(general, "web_search", lambda query: searches.append(query) or found[:1])
+    monkeypatch.setattr(general, "complete", complete)
+    events = []
+    result = run(
+        "how come EP more than SP",
+        lambda agent, step, content: events.append((agent, step, content)),
+        [saved_employment()],
+    )
+    assert result["kind"] == "chat"
+    assert result["datasets"] == []
+    assert calls == []
+    assert searches and "how come EP more than SP" in searches[0]
+    assert "professionals" in result["report"]["briefing"]
+    assert any(step == "action" and content.startswith("Search the web") for _, step, content in events)
 
 
 def test_follow_up_uses_safe_local_reply_when_llm_is_down(monkeypatch: pytest.MonkeyPatch):
     from app.agents.general import agent as general
 
+    monkeypatch.setattr(general, "web_search", lambda query: [])
     monkeypatch.setattr(general, "complete", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("down")))
     history = [
         {
@@ -239,15 +317,18 @@ def test_coordinator_notes_when_search_is_down(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(fetch, "search", down)
     events = []
     scope, terms, chosen, by_key = coordinator.plan("Analyse wages 2020-2024", lambda *event: events.append(event))
-    assert scope["notes"] == ["Dataset search was unavailable, so the default labour market and GDP datasets are shown."]
+    assert scope["notes"] == ["Dataset search was unavailable, so datasets with offline snapshots were considered."]
     assert chosen and set(chosen) <= set(by_key)
     assert ("coordinator", "observation", "Catalog search failed (ConnectionError).") in events
 
 
 def test_coordinator_flags_ambiguous_question(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(fetch, "search", lambda *args, **kwargs: [])
-    scope, *_ = coordinator.plan("tell me something", lambda *event: None)
-    assert scope["notes"] and "default labour market" in scope["notes"][0]
+    scope, terms, chosen, by_key = coordinator.plan("tell me something", lambda *event: None)
+    assert scope["notes"] and "nothing was charted" in scope["notes"][-1]
+    assert terms["phrases"]
+    assert chosen == []
+    assert by_key == {}
 
 
 def test_coordinator_drops_keys_outside_candidates(monkeypatch: pytest.MonkeyPatch):

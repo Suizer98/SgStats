@@ -12,6 +12,7 @@ from app.constants import (
     DATAGOV_LIST_URL,
     DEFAULT_COOLDOWN,
     DUPLICATE_OVERLAP,
+    EMBED_RETRY,
     FREQUENCY_WORDS,
     GEMINI_EMBED_MODEL,
     HEADERS,
@@ -34,9 +35,8 @@ index_cache: list[dict] | None = None
 refreshing = threading.Event()
 embedding = threading.Event()
 embed_paused_until = 0.0
-
-
 meaning_note = ""
+embed_note = ""
 
 
 def phrase_list(text: str) -> list[str]:
@@ -428,6 +428,21 @@ def keep_ranked(found: list[dict]) -> list[dict]:
     return kept
 
 
+def clear_embed_note() -> None:
+    global embed_note
+    embed_note = ""
+
+
+def record_embed_failure(failed: bool) -> None:
+    global embed_note
+    paused = time.time() < embed_paused_until or time.time() < embed.blocked_until
+    if not failed and not paused:
+        embed_note = ""
+        return
+    detail = embed.limit_message.strip()
+    embed_note = f"{EMBED_RETRY} Rate limit: {detail}" if detail else EMBED_RETRY
+
+
 def search(
     query: str,
     year_from: int,
@@ -441,6 +456,7 @@ def search(
     if index_is_stale():
         refresh_in_background(embed_allowed())
     if not terms["phrases"]:
+        record_embed_failure(False)
         return []
     others = search_singstat(terms, year_from, year_to) + search_internal(terms, year_from, year_to)
     ready = False
@@ -450,13 +466,17 @@ def search(
         ready = False
     if not ready and embed_allowed():
         embed_missing_in_background()
+    stored_failed = False
     if ready:
         try:
             stored = search_stored(query, year_from, year_to, terms)
         except Exception:
             stored = None
+            stored_failed = True
         if stored:
+            clear_embed_note()
             return keep_ranked(stored + sorted(others, key=lambda entry: -entry["score"]))
+    record_embed_failure(stored_failed)
     found = search_datagov(terms, year_from, year_to) + others
     return keep_ranked(sorted(found, key=lambda entry: -entry["score"]))
 

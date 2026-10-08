@@ -169,8 +169,12 @@ def test_gateway_requests_only_the_configured_model(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(settings, "GROQ_MODEL", "groq-test")
     model = client.make_chat_model()
     assert model.model_name == "gemini/gemini-test"
-    assert not model.extra_body
+    assert model.extra_body == {"fallbacks": ["groq/groq-test"]}
     assert str(model.openai_api_base).endswith("/v1")
+    monkeypatch.setattr(settings, "GROQ_MODEL", "")
+    solo = client.make_chat_model()
+    assert solo.model_name == "gemini/gemini-test"
+    assert not solo.extra_body
 
 
 def test_provider_log_lists_gemini_then_groq():

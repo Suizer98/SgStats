@@ -1,8 +1,8 @@
 """OpenAI-compatible chat client used by the agents.
 
 The base URL is whatever gateway is configured (Bifrost in this deployment).
-One model is requested; the gateway decides how to route or retry across the
-providers it is configured with, so this layer never names a fallback model.
+The request names Gemini and, when Groq is configured, lists it as a fallback.
+Bifrost tries Gemini first and uses Groq when that call fails.
 Prompts and output schemas stay in the agent that needs them.
 """
 
@@ -64,6 +64,8 @@ def make_chat_model(
     kwargs: dict = {}
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
+    if len(chosen) > 1:
+        kwargs["extra_body"] = {"fallbacks": chosen[1:]}
     return ChatOpenAI(
         model=chosen[0],
         base_url=gateway_base(),

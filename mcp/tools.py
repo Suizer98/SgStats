@@ -53,7 +53,8 @@ def run_tool(name: str, arguments: dict) -> dict:
     if name == "search_datasets":
         args = SearchArgs(**arguments)
         return {
-            "candidates": catalog.search(args.query, args.year_from, args.year_to, args.sector, args.phrases)
+            "candidates": catalog.search(args.query, args.year_from, args.year_to, args.sector, args.phrases),
+            "embed_note": catalog.embed_note,
         }
     if name == "fetch_dataset":
         args = FetchArgs(**arguments)

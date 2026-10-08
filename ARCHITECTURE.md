@@ -108,12 +108,12 @@ This is the ReAct pattern: each agent emits a thought, takes an action with a to
 | LLM provider error | Bifrost retries on the fallback provider; if both fail, the planner uses search ranking and the briefing uses the template |
 | Malformed LLM output | Pydantic parsing fails, and the same fallbacks apply |
 | Hallucinated numbers | Grounding check, one revision, then template |
-| Ambiguous question | Default datasets with a visible note asking for a topic |
+| Ambiguous question | No chart, with a visible note asking for a measurable topic |
 | No usable data at all | The analysis is marked failed with a clear message |
 
 ## LLM layer
 
-`app/llm/client.py` is a generic LangChain wrapper with no domain prompts. `complete(system, human, schema, variables)` builds a `ChatPromptTemplate`, calls a `ChatOpenAI` model pointed at Bifrost with a single model id (`gemini/<GEMINI_MODEL>`, or the first id from `chat_model_ids()`), parses the reply with `PydanticOutputParser`, and returns the parsed body, the provider that answered and token usage. Provider routing and failover stay in Bifrost's own configuration, so the client never names a fallback model.
+`app/llm/client.py` is a generic LangChain wrapper with no domain prompts. `complete(system, human, schema, variables)` builds a `ChatPromptTemplate`, calls a `ChatOpenAI` model pointed at Bifrost with `gemini/<GEMINI_MODEL>` and, when Groq is configured, `fallbacks` set to `groq/<GROQ_MODEL>`. Bifrost tries Gemini first and uses Groq when that call fails. The client parses the reply with `PydanticOutputParser` and returns the parsed body, the provider that answered and token usage.
 
 Prompts live with their agents: dataset planning in the coordinator and briefing in analytics. Adding a provider means adding it to Bifrost and to `chat_model_ids()`.
 
