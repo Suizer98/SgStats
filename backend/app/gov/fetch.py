@@ -153,11 +153,23 @@ def call_mcp(tool: str, arguments: dict) -> dict:
     return mcp.call_tool(tool, arguments)
 
 
-def search(query: str, year_from: int, year_to: int, sector: str | None = None) -> list[dict]:
+def search(
+    query: str,
+    year_from: int,
+    year_to: int,
+    sector: str | None = None,
+    phrases: list[str] | None = None,
+) -> list[dict]:
     if settings.MCP_URL:
-        arguments = {"query": query, "year_from": year_from, "year_to": year_to, "sector": sector}
+        arguments = {
+            "query": query,
+            "year_from": year_from,
+            "year_to": year_to,
+            "sector": sector,
+            "phrases": phrases,
+        }
         return call_mcp("search_datasets", arguments)["candidates"]
-    return catalog.search(query, year_from, year_to, sector)
+    return catalog.search(query, year_from, year_to, sector, phrases)
 
 
 def extract_one(provider: str, dataset_id: str, year_from: int, year_to: int, query: str = "", title: str = "") -> dict:

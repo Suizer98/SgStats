@@ -20,9 +20,7 @@ class RpcRequest(BaseModel):
 @app.on_event("startup")
 def warm_index() -> None:
     store.init_db()
-    catalog.sync_saved_vectors()
-    if catalog.index_is_stale():
-        catalog.refresh_in_background()
+    catalog.warm()
 
 
 @app.get("/health")

@@ -33,6 +33,33 @@ def classify_node(state: AgentState) -> dict:
     return {"intent": classify(state["query"], state.get("history") or [], state["emit"])}
 
 
+def route_plan(state: AgentState) -> str:
+    if state.get("chosen"):
+        return "extract"
+    return "miss"
+
+
+def miss_node(state: AgentState) -> dict:
+    note = " ".join(state["scope"].get("notes") or []) or "No official dataset directly measured this question."
+    report = {
+        "title": "No direct dataset",
+        "insights": [],
+        "briefing": note,
+        "citations": [],
+        "llm_provider": "local",
+        "llm_usage": {},
+        "llm_error": "",
+        "grounding": {"passed": True, "unsupported_numbers": []},
+    }
+    summary = {"metrics": [], "charts": [], "correlations": [], "facts": []}
+    return {
+        "datasets": [],
+        "summary": summary,
+        "report": report,
+        "result": build_result(state["query"], state["scope"], [], {}, [], summary, report),
+    }
+
+
 def route_intent(state: AgentState) -> str:
     intent = state.get("intent")
     if intent in {"chat", "edit"}:
@@ -159,6 +186,7 @@ def create_graph():
     workflow.add_node("chat", chat_node)
     workflow.add_node("edit", edit_node)
     workflow.add_node("coordinate", coordinate_node)
+    workflow.add_node("miss", miss_node)
     workflow.add_node("extract", extract_node)
     workflow.add_node("replan", replan_node)
     workflow.add_node("fail", fail_node)
@@ -173,7 +201,8 @@ def create_graph():
     )
     workflow.add_edge("chat", END)
     workflow.add_edge("edit", "analyse")
-    workflow.add_edge("coordinate", "extract")
+    workflow.add_conditional_edges("coordinate", route_plan, {"extract": "extract", "miss": "miss"})
+    workflow.add_edge("miss", END)
     workflow.add_conditional_edges(
         "extract",
         route_extraction,

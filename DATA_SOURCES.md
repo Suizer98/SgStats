@@ -4,7 +4,7 @@
 
 | Source | Provider key | Access | Format | Notes |
 | --- | --- | --- | --- | --- |
-| Data.gov.sg | `datagov` | `data.gov.sg/api/action/datastore_search` plus the v2 metadata API | JSON API | About 4,000 datasets indexed in `backend/data/datagov_index.json`. Up to 10,000 rows per fetch. |
+| Data.gov.sg | `datagov` | `data.gov.sg/api/action/datastore_search` plus the v2 metadata API | JSON API | About 4,000 datasets crawled into the `dataset_entries` table. Up to 10,000 rows per fetch. |
 | SingStat Table Builder | `singstat` | `tablebuilder.singstat.gov.sg/api/table/tabledata/{id}` and its search API | JSON API | Searched live per query. Tables have nested series with period columns. |
 | Mock internal database | `internal` | `backend/data/internal/sector_hiring.xlsx` | Excel | Synthetic sector hiring figures for 2019-2025. Clearly labelled as mock in the title, agency, note and citation. |
 | Bundled snapshots | same as origin | `backend/data/snapshots/` | JSON and CSV | Real records captured from the live APIs on 2026-09-26 for the three pinned datasets. Used only when a live fetch fails. |

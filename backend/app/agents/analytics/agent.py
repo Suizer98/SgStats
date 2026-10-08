@@ -232,6 +232,8 @@ def revise_report(
 
 
 def build_chat_message(query: str, scope: dict, datasets: list[dict], summary: dict, report: dict) -> str:
+    if not datasets:
+        return " ".join(scope.get("notes") or []) or report.get("briefing") or "No official dataset directly measured this question."
     metrics = summary.get("metrics", [])[:3]
     insights = report.get("insights", [])[:2]
     titles = ", ".join(item.get("title", "a dataset") for item in datasets[:2]) or "available datasets"

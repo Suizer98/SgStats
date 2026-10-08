@@ -68,6 +68,14 @@ class DatasetEntry(Base):
     coverage_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[str] = mapped_column(Text, default="")
     embedding: Mapped[Any] = mapped_column(EmbeddingType, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class CatalogRefresh(Base):
+    __tablename__ = "catalog_refresh"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SourceChunk(Base):
@@ -78,7 +86,6 @@ class SourceChunk(Base):
     source: Mapped[str] = mapped_column(String(128))
     citation: Mapped[str] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[Any] = mapped_column(EmbeddingType, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -109,6 +116,7 @@ def init_db() -> None:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(bind=engine)
     migrate_conversations()
+    migrate_schema()
 
 
 def migrate_conversations() -> None:
@@ -134,6 +142,17 @@ def migrate_conversations() -> None:
         db.commit()
     finally:
         db.close()
+
+
+def migrate_schema() -> None:
+    dataset_columns = {column["name"] for column in inspect(engine).get_columns("dataset_entries")}
+    if "embedding_model" not in dataset_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE dataset_entries ADD COLUMN embedding_model VARCHAR(128)"))
+    chunk_columns = {column["name"] for column in inspect(engine).get_columns("source_chunks")}
+    if "embedding" in chunk_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE source_chunks DROP COLUMN embedding"))
 
 
 def get_session():
@@ -250,6 +269,7 @@ def upsert_datasets(rows: list[dict]) -> int:
                         coverage_end=row.get("coverage_end"),
                         detail=row.get("detail") or "",
                         embedding=row.get("embedding"),
+                        embedding_model=row.get("embedding_model"),
                     )
                 )
                 continue
@@ -263,8 +283,135 @@ def upsert_datasets(rows: list[dict]) -> int:
                 existing.detail = row["detail"]
             if row.get("embedding") is not None:
                 existing.embedding = row["embedding"]
+                existing.embedding_model = row.get("embedding_model") or existing.embedding_model
         db.commit()
         return len(rows)
+    finally:
+        db.close()
+
+
+def save_datagov_catalog(items: list[dict]) -> int:
+    db = get_session()
+    try:
+        existing = {
+            row.dataset_id: row
+            for row in db.query(DatasetEntry).filter_by(provider="datagov").all()
+        }
+        seen = set()
+        for item in items:
+            seen.add(item["id"])
+            row = existing.get(item["id"])
+            if row is None:
+                db.add(
+                    DatasetEntry(
+                        provider="datagov",
+                        dataset_id=item["id"],
+                        title=item.get("title") or "",
+                        agency=item.get("agency") or "",
+                        coverage_start=item.get("coverage_start"),
+                        coverage_end=item.get("coverage_end"),
+                        detail=item.get("agency") or "",
+                    )
+                )
+                continue
+            row.title = item.get("title") or row.title
+            row.agency = item.get("agency") or row.agency
+            if item.get("coverage_start"):
+                row.coverage_start = item["coverage_start"]
+            if item.get("coverage_end"):
+                row.coverage_end = item["coverage_end"]
+        for dataset_id, row in existing.items():
+            if dataset_id not in seen:
+                db.delete(row)
+        stamp = db.get(CatalogRefresh, 1)
+        now = datetime.now(timezone.utc)
+        if stamp is None:
+            db.add(CatalogRefresh(id=1, refreshed_at=now))
+        else:
+            stamp.refreshed_at = now
+        db.commit()
+        return len(items)
+    finally:
+        db.close()
+
+
+def list_datagov() -> list[dict]:
+    db = get_session()
+    try:
+        rows = db.query(DatasetEntry).filter_by(provider="datagov").all()
+        return [
+            {
+                "id": row.dataset_id,
+                "title": row.title,
+                "agency": row.agency,
+                "coverage_start": row.coverage_start,
+                "coverage_end": row.coverage_end,
+            }
+            for row in rows
+        ]
+    finally:
+        db.close()
+
+
+def catalog_age_seconds() -> float | None:
+    db = get_session()
+    try:
+        stamp = db.get(CatalogRefresh, 1)
+        if stamp is None:
+            return None
+        refreshed = stamp.refreshed_at
+        if refreshed.tzinfo is None:
+            refreshed = refreshed.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - refreshed).total_seconds()
+    finally:
+        db.close()
+
+
+def datagov_counts() -> tuple[int, int]:
+    if not postgres_enabled():
+        return 0, 0
+    db = get_session()
+    try:
+        rows = db.query(DatasetEntry).filter_by(provider="datagov").all()
+        ready = sum(1 for row in rows if row.embedding is not None and row.embedding_model)
+        return len(rows), ready
+    finally:
+        db.close()
+
+
+def datagov_embedding_model() -> str | None:
+    if not postgres_enabled():
+        return None
+    db = get_session()
+    try:
+        values = {
+            row.embedding_model
+            for row in db.query(DatasetEntry).filter_by(provider="datagov").all()
+            if row.embedding is not None
+        }
+        if len(values) == 1 and None not in values:
+            return next(iter(values))
+        return None
+    finally:
+        db.close()
+
+
+def datagov_without_embedding(limit: int) -> list[dict]:
+    if not postgres_enabled():
+        return []
+    db = get_session()
+    try:
+        rows = (
+            db.query(DatasetEntry)
+            .filter_by(provider="datagov")
+            .filter((DatasetEntry.embedding.is_(None)) | (DatasetEntry.embedding_model.is_(None)))
+            .limit(limit)
+            .all()
+        )
+        return [
+            {"id": row.dataset_id, "title": row.title, "agency": row.agency}
+            for row in rows
+        ]
     finally:
         db.close()
 
@@ -279,19 +426,16 @@ def embedded_dataset_count() -> int:
         db.close()
 
 
-def rank_datasets(query_vector: list[float], limit: int = 24) -> list[dict]:
+def rank_datasets(query_vector: list[float], limit: int = 24, model: str | None = None) -> list[dict]:
     if not postgres_enabled():
         return []
     db = get_session()
     try:
         distance = DatasetEntry.embedding.cosine_distance(query_vector)
-        rows = (
-            db.query(DatasetEntry, distance.label("distance"))
-            .filter(DatasetEntry.embedding.is_not(None))
-            .order_by(distance)
-            .limit(limit)
-            .all()
-        )
+        query = db.query(DatasetEntry, distance.label("distance")).filter(DatasetEntry.embedding.is_not(None))
+        if model:
+            query = query.filter(DatasetEntry.embedding_model == model)
+        rows = query.order_by(distance).limit(limit).all()
         found = []
         for row, value in rows:
             found.append(

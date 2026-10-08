@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import httpx
 import numpy as np
@@ -11,12 +10,10 @@ from app.constants import (
     BATCH_TIMEOUT,
     DEFAULT_COOLDOWN,
     EMBED_DIM,
-    GEMINI_PROVIDER,
-    GEMINI_URL,
+    GEMINI_EMBED_MODEL,
+    GROQ_EMBED_MODEL,
     GROQ_PROVIDER,
-    GROQ_URL,
     REQUEST_TIMEOUT,
-    VECTOR_PATH,
 )
 from app.core import settings
 
@@ -40,36 +37,73 @@ def rate_limited(provider: str, response: httpx.Response, patient: bool) -> None
     time.sleep(delay)
 
 
-def document_text(title: str, detail: str = "", provider: str = GEMINI_PROVIDER) -> str:
+def document_text(title: str, detail: str = "", model: str = GEMINI_EMBED_MODEL) -> str:
     body = detail.strip() or "none"
-    if provider == GROQ_PROVIDER:
+    if GROQ_PROVIDER in model:
         return f"search_document: {title}. {body}"
     return f"title: {title} | text: {body}"
 
 
-def query_text(query: str, provider: str = GEMINI_PROVIDER) -> str:
-    if provider == GROQ_PROVIDER:
+def query_text(query: str, model: str = GEMINI_EMBED_MODEL) -> str:
+    if GROQ_PROVIDER in model:
         return f"search_query: {query}"
     return f"task: search result | query: {query}"
 
 
-def embed_texts(texts: list[str], provider: str = GEMINI_PROVIDER, patient: bool = False) -> np.ndarray:
+def embeddings_url() -> str:
+    base = settings.BIFROST_URL.rstrip("/")
+    if base.endswith("/v1"):
+        return f"{base}/embeddings"
+    return f"{base}/v1/embeddings"
+
+
+def embed_texts(texts: list[str], model: str = GEMINI_EMBED_MODEL, patient: bool = False) -> tuple[np.ndarray, str]:
     if not texts:
-        return np.zeros((0, EMBED_DIM), dtype=np.float32)
+        return np.zeros((0, EMBED_DIM), dtype=np.float32), model
+    if not settings.BIFROST_URL:
+        raise QuotaError("No embedding gateway")
     if not patient and time.time() < blocked_until:
         raise QuotaError("embedding paused after a rate limit")
     rows: list[list[float]] = []
+    resolved = model
     with httpx.Client(timeout=BATCH_TIMEOUT if patient else REQUEST_TIMEOUT) as client:
         for start in range(0, len(texts), BATCH_SIZE):
             chunk = texts[start : start + BATCH_SIZE]
-            if provider == GROQ_PROVIDER:
-                rows.extend(embed_groq(client, chunk, patient))
-            else:
-                rows.extend(embed_gemini(client, chunk, patient))
+            embedded, resolved = embed_chunk(client, chunk, resolved, patient)
+            rows.extend(embedded)
     matrix = np.asarray(rows, dtype=np.float32)
     if matrix.shape != (len(texts), EMBED_DIM):
-        raise RuntimeError(f"{provider} returned shape {matrix.shape}, expected {(len(texts), EMBED_DIM)}")
-    return matrix
+        raise RuntimeError(f"{resolved} returned shape {matrix.shape}, expected {(len(texts), EMBED_DIM)}")
+    return matrix, resolved
+
+
+def embed_chunk(
+    client: httpx.Client,
+    texts: list[str],
+    model: str,
+    patient: bool,
+) -> tuple[list[list[float]], str]:
+    payload: dict = {"model": model, "input": texts}
+    if model == GEMINI_EMBED_MODEL:
+        payload["dimensions"] = EMBED_DIM
+        payload["fallbacks"] = [GROQ_EMBED_MODEL]
+    while True:
+        response = client.post(
+            embeddings_url(),
+            headers={"Authorization": f"Bearer {settings.LLM_API_KEY}"},
+            json=payload,
+        )
+        if response.status_code == 429:
+            rate_limited("gateway", response, patient)
+            continue
+        if response.status_code >= 400:
+            raise RuntimeError(f"Embedding failed ({response.status_code}): {response.text[:300]}")
+        body = response.json()
+        data = body.get("data") or []
+        data.sort(key=lambda item: item.get("index", 0))
+        if len(data) != len(texts):
+            raise RuntimeError(f"Gateway returned {len(data)} vectors for {len(texts)} texts")
+        return [item["embedding"] for item in data], str(body.get("model") or model)
 
 
 def retry_seconds(response: httpx.Response) -> float | None:
@@ -97,92 +131,9 @@ def retry_seconds(response: httpx.Response) -> float | None:
     return None
 
 
-def embed_gemini(client: httpx.Client, texts: list[str], patient: bool = False) -> list[list[float]]:
-    if not settings.GEMINI_API_KEY:
-        raise QuotaError("GEMINI_API_KEY is not set")
-    payload = {
-        "requests": [
-            {
-                "model": "models/gemini-embedding-2",
-                "content": {"parts": [{"text": text}]},
-                "output_dimensionality": EMBED_DIM,
-            }
-            for text in texts
-        ]
-    }
-    while True:
-        response = client.post(GEMINI_URL, headers={"x-goog-api-key": settings.GEMINI_API_KEY}, json=payload)
-        if response.status_code == 429:
-            rate_limited("gemini", response, patient)
-            continue
-        if response.status_code >= 400:
-            raise RuntimeError(f"Gemini embedding failed ({response.status_code}): {response.text[:300]}")
-        embeddings = response.json().get("embeddings") or []
-        if len(embeddings) != len(texts):
-            raise RuntimeError(f"Gemini returned {len(embeddings)} vectors for {len(texts)} texts")
-        return [item["values"] for item in embeddings]
-
-
-def embed_groq(client: httpx.Client, texts: list[str], patient: bool = False) -> list[list[float]]:
-    if not settings.GROQ_API_KEY:
-        raise QuotaError("GROQ_API_KEY is not set")
-    response = client.post(
-        GROQ_URL,
-        headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
-        json={"model": GROQ_PROVIDER, "input": texts, "encoding_format": "float"},
-    )
-    if response.status_code == 429:
-        rate_limited("groq", response, patient)
-        return embed_groq(client, texts, patient)
-    if response.status_code >= 400:
-        raise RuntimeError(f"Groq embedding failed ({response.status_code}): {response.text[:300]}")
-    rows = response.json().get("data") or []
-    rows.sort(key=lambda item: item.get("index", 0))
-    if len(rows) != len(texts):
-        raise RuntimeError(f"Groq returned {len(rows)} vectors for {len(texts)} texts")
-    return [item["embedding"] for item in rows]
-
-
-def build_title_vectors(items: list[dict], path: Path, provider: str = GEMINI_PROVIDER) -> int:
-    """Embed dataset titles in index order. A partial file lets a stopped run continue."""
-    ids = [item["id"] for item in items]
-    done = 0
-    parts: list[np.ndarray] = []
-    partial = path.with_suffix(".partial.npz")
-    if partial.exists():
-        saved = np.load(partial, allow_pickle=False)
-        saved_ids = [str(item) for item in saved["ids"]]
-        if ids[: len(saved_ids)] == saved_ids and len(saved_ids) > 0:
-            done = len(saved_ids)
-            parts.append(saved["vectors"])
-            if "provider" in saved:
-                provider = str(saved["provider"])
-    while done < len(items):
-        chunk = items[done : done + BATCH_SIZE]
-        texts = [document_text(item["title"], item.get("agency", ""), provider) for item in chunk]
-        try:
-            part = embed_texts(texts, provider, patient=True)
-        except QuotaError:
-            if done == 0 and provider == GEMINI_PROVIDER and settings.GROQ_API_KEY:
-                provider = GROQ_PROVIDER
-                print("gemini quota blocked the index, embedding titles with groq", flush=True)
-                texts = [document_text(item["title"], item.get("agency", ""), provider) for item in chunk]
-                part = embed_texts(texts, provider, patient=True)
-            else:
-                raise
-        parts.append(part)
-        done += len(chunk)
-        matrix = np.vstack(parts)
-        np.savez_compressed(partial, ids=np.array(ids[:done]), vectors=matrix, provider=np.array(provider))
-        print(f"embedded {done}/{len(items)} via {provider}", flush=True)
-    matrix = np.vstack(parts) if parts else np.zeros((0, EMBED_DIM), dtype=np.float32)
-    np.savez_compressed(path, ids=np.array(ids), vectors=matrix, provider=np.array(provider))
-    partial.unlink(missing_ok=True)
-    return len(ids)
-
-
 if __name__ == "__main__":
-    from app.gov.catalog import load_index
+    from app.core import store
+    from app.gov.catalog import embed_missing
 
-    count = build_title_vectors(load_index(), VECTOR_PATH)
-    print(f"Saved {count} title embeddings to {VECTOR_PATH}")
+    store.init_db()
+    print(f"Embedded {embed_missing()} catalogue titles")

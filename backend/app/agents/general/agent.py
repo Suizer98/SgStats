@@ -5,7 +5,7 @@ import re
 from pydantic import BaseModel, Field
 
 from app.agents.types import Emit
-from app.constants import DATA_CUES, EDIT_CUES, SYNONYMS
+from app.constants import DATA_CUES, EDIT_CUES
 from app.core import store
 from app.gov import data
 from app.llm.client import complete
@@ -21,10 +21,7 @@ class Intent(BaseModel):
 
 
 def looks_like_data(query: str) -> bool:
-    if DATA_CUES.search(query):
-        return True
-    words = re.findall(r"[a-z][a-z\-]*", query.lower())
-    return any(word in SYNONYMS for word in words)
+    return bool(DATA_CUES.search(query))
 
 
 def thread_outline(history: list[dict]) -> str:

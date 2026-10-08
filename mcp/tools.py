@@ -10,7 +10,13 @@ TOOLS = [
     {
         "name": "search_datasets",
         "description": "Search Data.gov.sg, SingStat Table Builder and the mock internal database for datasets matching a policy question.",
-        "input": {"query": "string", "year_from": "int", "year_to": "int", "sector": "string | null"},
+        "input": {
+            "query": "string",
+            "year_from": "int",
+            "year_to": "int",
+            "sector": "string | null",
+            "phrases": "string[] | null",
+        },
     },
     {
         "name": "fetch_dataset",
@@ -31,6 +37,7 @@ class SearchArgs(BaseModel):
     year_from: int = 2016
     year_to: int = 2026
     sector: str | None = None
+    phrases: list[str] | None = None
 
 
 class FetchArgs(BaseModel):
@@ -45,7 +52,9 @@ class FetchArgs(BaseModel):
 def run_tool(name: str, arguments: dict) -> dict:
     if name == "search_datasets":
         args = SearchArgs(**arguments)
-        return {"candidates": catalog.search(args.query, args.year_from, args.year_to, args.sector)}
+        return {
+            "candidates": catalog.search(args.query, args.year_from, args.year_to, args.sector, args.phrases)
+        }
     if name == "fetch_dataset":
         args = FetchArgs(**arguments)
         try:

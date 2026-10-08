@@ -5,7 +5,7 @@
 ```bash
 cd backend
 uv sync
-uv run pytest                          # 100 cases, about 10 seconds, no network or keys needed
+uv run pytest                          # 103 cases, about 10 seconds, no network or keys needed
 uv run pytest --cov --cov-report=term  # with coverage (about 80% of backend/app)
 LIVE_LLM_URL=http://localhost:8080 GEMINI_MODEL=gemini-3.5-flash GROQ_MODEL=openai/gpt-oss-120b \
   uv run pytest tests/test_llm.py -k live   # optional check against a running Bifrost
@@ -79,7 +79,7 @@ The tests also verify hierarchical tables. Section headings and indented rows mu
 Integration tests exercise the decisions that make the workflow agentic:
 
 - The coordinator may select only dataset keys returned by search.
-- A single-source plan adds a second provider for cross-checking where possible.
+- A plan that matches nothing directly is not charted.
 - Failed extraction tries another candidate and can replan once.
 - An unavailable gov-mcp service falls back to pinned snapshots.
 - Invalid LLM output falls back to ranked search or a deterministic report.
@@ -108,7 +108,7 @@ The manual outage scenario stops gov-mcp before submission. A pass requires a vi
 
 ## Results
 
-The backend suite is 100 cases. It passes with no network or API keys, in about 10 seconds, at about 80% line coverage of `backend/app`. One case reads `bifrost/config.json` and checks that request logging is on and that both the log store and the config store use the `sgstats` Postgres database. The Gemini-to-Groq fallback is checked on the LangChain client, without calling the gateway. The lower coverage is live HTTP (government APIs, embedding jobs, Postgres-only vector queries), which the end-to-end runs exercise instead.
+The backend suite is 103 cases. It passes with no network or API keys, in about 10 seconds, at about 80% line coverage of `backend/app`. One case reads `bifrost/config.json` and checks that request logging is on and that both the log store and the config store use the `sgstats` Postgres database. The Gemini-to-Groq fallback is checked on the LangChain client, without calling the gateway. The lower coverage is live HTTP (government APIs, embedding jobs, Postgres-only vector queries), which the end-to-end runs exercise instead.
 
 End-to-end runs of the sample queries in the README, plus a gov-mcp outage, all completed in 17 to 34 seconds with grounding passed. With the data service stopped, search failure is reported, bundled snapshots are loaded, and the briefing says the service was unreachable.
 

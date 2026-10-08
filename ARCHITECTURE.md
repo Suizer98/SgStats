@@ -70,7 +70,9 @@ The agents are nodes in a LangGraph `StateGraph`. Each node reads and writes a s
 ```mermaid
 stateDiagram-v2
     [*] --> coordinate
-    coordinate --> extract
+    coordinate --> extract: a dataset directly measures the question
+    coordinate --> miss: nothing does
+    miss --> [*]
     extract --> analyse: datasets loaded
     extract --> replan: nothing usable, candidates left
     extract --> fail: nothing usable, no candidates left
@@ -84,7 +86,7 @@ stateDiagram-v2
 
 | Agent | Reasoning (thought) | Tools and actions | Observations |
 | --- | --- | --- | --- |
-| Coordinator | Parses the year range and sector, decides search terms, explains its dataset choice | `search_datasets` over pgvector, keyword index and SingStat search; LLM planner with a `DatasetPlan` schema; cross-check rule | Candidate count and top matches, search failures, ambiguity notes |
+| Coordinator | Parses the year range and sector, asks the model what the question means, explains its dataset choice | `search_datasets` over pgvector, keyword index and SingStat search; LLM planner with a `DatasetPlan` schema | Candidate count and top matches, search failures, a refusal when nothing directly measures the question |
 | Extractor | States the fetch plan and fallback policy | `fetch_dataset` per planned dataset, then backup candidates, up to 4 attempts | Rows, grain, series count, quality result, notes such as snapshot fallback |
 | Analytics | Explains the aggregation approach | pandas summary, correlations, LLM briefing with a `Briefing` schema, grounding check | Chart and metric counts, strongest correlation, provider, tokens, latency, grounding result |
 
@@ -92,8 +94,7 @@ This is the ReAct pattern: each agent emits a thought, takes an action with a to
 
 ### Decisions and planning
 
-- The coordinator's LLM may only choose keys from the candidate list. Invented keys are dropped, and a plan with no valid key raises and falls back to search ranking.
-- If a plan uses a single provider, the coordinator adds the best-ranked dataset from another provider so findings can be cross-checked.
+- The coordinator's LLM may only choose keys from the candidate list. Invented keys are dropped. An empty plan means none of the candidates directly measure the question, so nothing is charted. A plan that names only invented keys falls back to search ranking.
 - If extraction returns nothing usable, the graph replans once with the next unused candidates.
 - If the briefing contains numbers that are not in the computed facts, the graph revises once with the unsupported numbers as feedback. If the revision still fails, the deterministic template briefing is used.
 
@@ -103,7 +104,7 @@ This is the ReAct pattern: each agent emits a thought, takes an action with a to
 | --- | --- |
 | Government API error or timeout | gov-mcp falls back to a bundled real snapshot for pinned datasets; otherwise the extractor tries the next candidate |
 | gov-mcp unreachable | Coordinator uses the pinned datasets; the api loads their snapshots locally and notes it |
-| Embedding provider rate limited | Request paths fail fast and pause embeddings for the retry window; search falls back to keyword ranking |
+| Embedding provider rate limited | Bifrost tries Groq. If the vector that comes back is from a different model, or the call fails, search uses keyword ranking |
 | LLM provider error | Bifrost retries on the fallback provider; if both fail, the planner uses search ranking and the briefing uses the template |
 | Malformed LLM output | Pydantic parsing fails, and the same fallbacks apply |
 | Hallucinated numbers | Grounding check, one revision, then template |
@@ -120,7 +121,9 @@ Bifrost records each provider attempt in Postgres. Its dashboard on port 8080 sh
 
 ## Retrieval
 
-Each fetched dataset is embedded once (title, agency, series names and measures) with `gemini-embedding-2` at 768 dimensions and stored in the `dataset_entries` table. Search ranks by cosine distance with pgvector, then mixes in keyword matches from the Data.gov.sg index, SingStat's own search and the internal source. If embeddings are unavailable, keyword ranking with synonyms is used. One embedding model is used everywhere so vectors are always comparable.
+The Data.gov.sg catalogue lives in `dataset_entries`. gov-mcp crawls it into Postgres and refreshes it when the copy is missing or older than 7 days. SingStat is still queried live.
+
+Search uses one ranking method for that catalogue. Before it runs, the chat model reads the question and returns a few official phrases, such as reading EP as employment pass. Those phrases are what keyword search and, when vectors exist, the embedding query use. If the model is unavailable, search uses the words already in the question. When every row carries an embedding from the same model, pgvector orders them by cosine similarity. SingStat and the internal source are appended after those hits, on their own keyword scores. Until the embedding backfill finishes, or when the gateway is down, the catalogue is ranked by keyword score. Embeddings go through Bifrost (`gemini/gemini-embedding-2`, 768 dimensions), with Groq as the fallback. A query vector is used only when Bifrost returns the same model that embedded the rows.
 
 ## Data model
 
@@ -129,7 +132,8 @@ Each fetched dataset is embedded once (title, agency, series names and measures)
 | `conversations` | Thread id, title, timestamps |
 | `analyses` | Query, status, result JSON, error, conversation id |
 | `agent_events` | Agent, step (thought, action, observation), content, timestamp |
-| `dataset_entries` | Provider, dataset id, title, agency, coverage, detail text, 768-dimension embedding |
+| `dataset_entries` | Provider, dataset id, title, agency, coverage, detail text, optional 768-dimension embedding and the model that produced it |
+| `catalog_refresh` | When the Data.gov.sg catalogue was last crawled |
 | `source_chunks` | Records used by each analysis, for traceability |
 
 Bifrost owns its tables in the same database. The main request table is `logs`; gateway settings use `config_` tables, and governance uses `governance_` tables. The application does not read or write those tables directly.

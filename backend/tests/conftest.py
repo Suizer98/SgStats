@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from app.core import settings, store
+from app.gov import catalog
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +18,7 @@ def temp_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         store.engine.dispose()
     store.engine = None
     store.SessionLocal = None
+    catalog.index_cache = None
     store.init_db()
     yield
     if store.engine is not None:

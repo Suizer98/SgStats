@@ -87,6 +87,23 @@ def provider_name(message: AIMessage) -> str:
     return "gateway"
 
 
+def complete_text(system: str, human: str, variables: dict, timeout: float | None = None) -> str:
+    model = make_chat_model(timeout)
+    if model is None:
+        raise LLMError("No LLM gateway URL set")
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", "{system_prompt}"),
+            ("human", human),
+        ]
+    ).partial(system_prompt=system)
+    message = (prompt | model).invoke(variables)
+    if not isinstance(message, AIMessage):
+        raise LLMError("LangChain returned a non-chat message")
+    note_provider(provider_name(message))
+    return message.content if isinstance(message.content, str) else str(message.content)
+
+
 def complete(
     system: str,
     human: str,

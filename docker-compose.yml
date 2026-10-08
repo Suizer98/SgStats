@@ -26,9 +26,13 @@ services:
     environment:
       FETCH_TIMEOUT: "12"
       DATABASE_URL: postgresql+psycopg://sgstats:sgstats@postgres:5432/sgstats
+      BIFROST_URL: http://bifrost:8080
+      MCP_URL: ""
     depends_on:
       postgres:
         condition: service_healthy
+      bifrost:
+        condition: service_started
 
   bifrost:
     image: maximhq/bifrost

@@ -9,7 +9,7 @@ from app.gov import catalog, data, fetch, sources
 def test_pipeline_without_llm_keys(monkeypatch: pytest.MonkeyPatch):
     events = []
 
-    def search(query, year_from, year_to, sector=None):
+    def search(query, year_from, year_to, sector=None, phrases=None):
         return catalog.pinned_candidates()
 
     def snapshot(provider, dataset_id, year_from, year_to, query="", title=""):
@@ -37,9 +37,8 @@ def test_pipeline_without_llm_keys(monkeypatch: pytest.MonkeyPatch):
     chart = result["summary"]["charts"][0]
     assert chart["title"] == sources.PINNED[0]["title"]
     assert chart["xLabel"] in {"Year", "Quarter"} and chart["yLabel"]
-    assert len(result["plan"]) == 3
-    assert {item["provider"] for item in result["plan"]} == {"datagov", "singstat"}
-    assert any("cross-check" in content for _, _, content in events)
+    assert len(result["plan"]) == 2
+    assert {item["provider"] for item in result["plan"]} == {"datagov"}
     agents = {item[0] for item in events}
     assert agents == {"coordinator", "extractor", "analytics"}
     steps = {item[1] for item in events}
@@ -50,7 +49,7 @@ def test_failed_fetch_moves_to_next_candidate(monkeypatch: pytest.MonkeyPatch):
     events = []
     candidates = catalog.pinned_candidates()
 
-    def search(query, year_from, year_to, sector=None):
+    def search(query, year_from, year_to, sector=None, phrases=None):
         return candidates
 
     def flaky(provider, dataset_id, year_from, year_to, query="", title=""):
@@ -260,15 +259,32 @@ def test_coordinator_drops_keys_outside_candidates(monkeypatch: pytest.MonkeyPat
     assert rationale == "r"
 
 
-def test_cross_check_prefers_another_government_source():
-    by_key = {
-        "singstat:A": {"provider": "singstat"},
-        "internal:X": {"provider": "internal"},
-        "datagov:B": {"provider": "datagov"},
-    }
-    assert coordinator.cross_check(["singstat:A"], by_key) == "datagov:B"
-    assert coordinator.cross_check(["singstat:A"], {k: v for k, v in by_key.items() if k != "datagov:B"}) == "internal:X"
-    assert coordinator.cross_check(["singstat:A", "datagov:B"], by_key) is None
+def test_unrelated_candidates_are_not_charted(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        fetch,
+        "search",
+        lambda *args, **kwargs: [
+            {
+                "provider": "datagov",
+                "id": "d_workers",
+                "title": "Workers In Manufacturing By Industry, Annual",
+                "agency": "DOS",
+                "coverage": "2020-2024",
+                "score": 3,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        coordinator,
+        "complete",
+        lambda **kwargs: {
+            "body": {"datasets": [], "rationale": "Manufacturing workers do not measure employment pass holders."},
+            "provider": "gateway",
+        },
+    )
+    result = run("Analyse employment pass holders from 2020 to 2024", lambda *event: None)
+    assert result["datasets"] == []
+    assert "directly measures" in result["report"]["chat_message"]
 
 
 def test_coordinator_rejects_plan_with_only_invented_keys(monkeypatch: pytest.MonkeyPatch):

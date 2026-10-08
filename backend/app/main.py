@@ -14,13 +14,11 @@ from app import agents
 from app.agents.general.agent import conversation_history
 from app.constants import INTERRUPTED
 from app.core import store
-from app.gov import catalog
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     await asyncio.to_thread(store.init_db)
-    await asyncio.to_thread(catalog.sync_saved_vectors)
     await asyncio.to_thread(store.fail_interrupted, INTERRUPTED)
     yield
 

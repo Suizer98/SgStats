@@ -1,7 +1,7 @@
-import numpy as np
 import pytest
 
 from app.agents import check_grounding
+from app.core import settings, store
 from app.gov import catalog, data, embed, fetch, sources
 from app.gov.data import current_year, normalize_any, normalize_singstat, parse_period, parse_query, summarise
 
@@ -110,11 +110,35 @@ def test_out_of_range_request_falls_back_to_latest_years():
     assert rows and note.startswith("No data for 2025-2026")
 
 
-def test_search_terms_expand_abbreviations():
+def test_search_terms_keep_the_question_words():
     terms = catalog.search_terms("How many total EP workers in Singapore from 2020 to current")
-    assert "employment pass" in terms["phrases"]
-    assert {"employment", "pass", "foreign", "workforce"} <= terms["tokens"]
+    assert "ep" in terms["phrases"]
+    assert "employment pass" not in terms["phrases"]
     assert "singapore" not in terms["tokens"]
+
+
+def test_search_terms_put_the_model_meaning_first():
+    terms = catalog.search_terms(
+        "How many total EP workers in Singapore from 2020 to current",
+        extra=["employment pass", "foreign workforce"],
+    )
+    assert terms["phrases"][0] == "employment pass"
+    assert {"employment", "pass", "foreign", "workforce", "ep"} <= terms["tokens"]
+
+
+def test_meaning_phrases_follow_the_model(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "BIFROST_URL", "http://bifrost:8080")
+
+    def fake_text(**kwargs):
+        assert "EP" in kwargs["variables"]["query"]
+        return "Employment Pass, foreign workforce"
+
+    monkeypatch.setattr(catalog, "complete_text", fake_text)
+    assert catalog.meaning_phrases("How many EP workers") == ["employment pass", "foreign workforce"]
+
+
+def test_meaning_phrases_skip_when_the_gateway_is_down():
+    assert catalog.meaning_phrases("How many EP workers") == []
 
 
 def test_embedding_prefixes_differ_by_provider():
@@ -149,17 +173,79 @@ def test_retry_delay_comes_from_the_response():
     assert embed.retry_seconds(Empty()) is None
 
 
-def test_embedded_search_prefers_the_closer_title(monkeypatch: pytest.MonkeyPatch):
-    items = [
-        {"id": "rain", "title": "Historical Rainfall", "agency": "NEA", "coverage_start": 2020, "coverage_end": 2020},
-        {"id": "ep", "title": "Stock of Foreign Workforce by Pass Type", "agency": "MOM", "coverage_start": 2017, "coverage_end": 2022},
-    ]
-    matrix = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
-    monkeypatch.setattr(catalog, "load_index", lambda: items)
-    monkeypatch.setattr(catalog, "load_vectors", lambda: (["rain", "ep"], matrix, embed.GEMINI_PROVIDER))
-    monkeypatch.setattr(catalog.embed, "embed_texts", lambda texts, provider: np.array([[0.0, 1.0]], dtype=np.float32))
-    found = catalog.search_datagov_embedded("How many EP workers", 2020, 2026)
-    assert [item["id"] for item in found] == ["ep"]
+def test_vector_search_keeps_keyword_scores_behind(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(catalog, "index_is_stale", lambda: False)
+    monkeypatch.setattr(catalog, "vectors_ready", lambda: True)
+    monkeypatch.setattr(
+        catalog,
+        "search_stored",
+        lambda query, year_from, year_to, terms=None: [
+            {
+                "provider": "datagov",
+                "id": "ep",
+                "title": "Stock of Foreign Workforce by Pass Type",
+                "agency": "MOM",
+                "coverage": "2017-2022",
+                "score": 0.42,
+            }
+        ],
+    )
+
+    def keyword(*args, **kwargs):
+        raise AssertionError("keyword catalogue should not run beside a vector hit")
+
+    monkeypatch.setattr(catalog, "search_datagov", keyword)
+    monkeypatch.setattr(catalog, "search_singstat", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        catalog,
+        "search_internal",
+        lambda *args, **kwargs: [
+            {
+                "provider": "internal",
+                "id": "int",
+                "title": "Sector Hiring",
+                "agency": "Internal",
+                "coverage": "",
+                "score": 9.0,
+            }
+        ],
+    )
+    found = catalog.search("How many EP workers", 2020, 2026)
+    assert [item["id"] for item in found] == ["ep", "int"]
+
+
+def test_keyword_search_sorts_when_vectors_are_not_ready(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(catalog, "index_is_stale", lambda: False)
+    monkeypatch.setattr(catalog, "vectors_ready", lambda: False)
+    monkeypatch.setattr(
+        catalog,
+        "search_datagov",
+        lambda *args, **kwargs: [
+            {"provider": "datagov", "id": "low", "title": "Low", "agency": "", "coverage": "", "score": 1.0},
+            {"provider": "datagov", "id": "high", "title": "High", "agency": "", "coverage": "", "score": 4.0},
+        ],
+    )
+    monkeypatch.setattr(catalog, "search_singstat", lambda *args, **kwargs: [])
+    monkeypatch.setattr(catalog, "search_internal", lambda *args, **kwargs: [])
+    found = catalog.search("employment pass", 2020, 2024)
+    assert [item["id"] for item in found] == ["high", "low"]
+
+
+def test_catalog_is_stored_in_the_database():
+    store.save_datagov_catalog(
+        [
+            {
+                "id": "d1",
+                "title": "Foreign Workforce",
+                "agency": "MOM",
+                "coverage_start": 2016,
+                "coverage_end": 2024,
+            }
+        ]
+    )
+    catalog.index_cache = None
+    assert catalog.load_index()[0]["id"] == "d1"
+    assert catalog.index_is_stale() is False
 
 
 def test_frequency_variants_are_duplicates():
@@ -244,7 +330,7 @@ def test_request_time_embedding_fails_fast_on_rate_limit(monkeypatch: pytest.Mon
     from app.core import settings
 
     calls = []
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "key")
+    monkeypatch.setattr(settings, "BIFROST_URL", "http://bifrost:8080")
     monkeypatch.setattr(embed, "blocked_until", 0.0)
     monkeypatch.setattr(embed.time, "sleep", lambda seconds: pytest.fail("request path must not sleep"))
 
@@ -264,6 +350,9 @@ def test_request_time_embedding_fails_fast_on_rate_limit(monkeypatch: pytest.Mon
             return False
 
         def post(self, url, headers, json):
+            assert url == "http://bifrost:8080/v1/embeddings"
+            assert json["model"] == "gemini/gemini-embedding-2"
+            assert json["fallbacks"] == ["groq/nomic-embed-text-v1.5"]
             calls.append(url)
             return Limited()
 
@@ -309,13 +398,21 @@ def test_dataset_detail_includes_series_and_measure():
 
 
 def test_search_reads_stored_dataset_vectors(monkeypatch: pytest.MonkeyPatch):
+    class Row:
+        def tolist(self):
+            return [0.2, 0.8]
+
+    class Matrix:
+        def __getitem__(self, index):
+            return Row()
+
     monkeypatch.setattr(catalog, "index_is_stale", lambda: False)
-    monkeypatch.setattr(catalog.store, "postgres_enabled", lambda: True)
-    monkeypatch.setattr(catalog.store, "embedded_dataset_count", lambda: 1)
+    monkeypatch.setattr(catalog, "vectors_ready", lambda: True)
+    monkeypatch.setattr(catalog.store, "datagov_embedding_model", lambda: "gemini/gemini-embedding-2")
     monkeypatch.setattr(
         catalog.store,
         "rank_datasets",
-        lambda vector, limit=24: [
+        lambda vector, limit=24, model=None: [
             {
                 "provider": "datagov",
                 "id": "ep",
@@ -327,9 +424,13 @@ def test_search_reads_stored_dataset_vectors(monkeypatch: pytest.MonkeyPatch):
             }
         ],
     )
-    monkeypatch.setattr(catalog.embed, "embed_texts", lambda texts, provider=embed.GEMINI_PROVIDER: np.array([[0.2, 0.8]], dtype=np.float32))
-    monkeypatch.setattr(catalog, "search_datagov", lambda terms, year_from, year_to: [])
+    monkeypatch.setattr(
+        catalog.embed,
+        "embed_texts",
+        lambda texts, model="gemini/gemini-embedding-2", patient=False: (Matrix(), model),
+    )
     monkeypatch.setattr(catalog, "search_singstat", lambda terms, year_from, year_to: [])
+    monkeypatch.setattr(catalog, "search_internal", lambda terms, year_from, year_to: [])
 
     found = catalog.search("How many EP workers", 2020, 2026)
 

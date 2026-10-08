@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import re
 
-from app.core import settings
-
 EMBED_DIM = 768
 GEMINI_PROVIDER = "gemini-embedding-2"
 GROQ_PROVIDER = "nomic-embed-text-v1.5"
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:batchEmbedContents"
-GROQ_URL = "https://api.groq.com/openai/v1/embeddings"
+GEMINI_EMBED_MODEL = f"gemini/{GEMINI_PROVIDER}"
+GROQ_EMBED_MODEL = f"groq/{GROQ_PROVIDER}"
 BATCH_SIZE = 64
 REQUEST_TIMEOUT = 10
 BATCH_TIMEOUT = 60
@@ -21,11 +19,9 @@ DATAGOV_META_URL = "https://api-production.data.gov.sg/v2/public/api/datasets/{}
 SINGSTAT_SEARCH_URL = "https://tablebuilder.singstat.gov.sg/api/table/resourceid"
 SINGSTAT_URL = "https://tablebuilder.singstat.gov.sg/api/table/tabledata"
 ROW_LIMIT = 10000
-INDEX_PATH = settings.DATA_DIR / "datagov_index.json"
-VECTOR_PATH = settings.DATA_DIR / "datagov_vectors.npz"
-EMBED_MARGIN = 0.08
 INDEX_MAX_AGE = 7 * 24 * 3600
 MAX_CANDIDATES = 12
+VECTOR_SLOTS = 8
 SINGSTAT_PHRASES = 3
 SINGSTAT_BONUS = 0.6
 INTERNAL_MIN_SCORE = 2
@@ -41,22 +37,8 @@ STOPWORDS = {
     "has", "have", "had", "been", "changed", "changing", "grown", "grow", "looks", "like", "can",
     "could", "would", "should", "please", "overall", "recent", "recently", "compared",
 }
-SYNONYMS = {
-    "ep": ["employment pass", "foreign workforce"],
-    "eps": ["employment pass", "foreign workforce"],
-    "spass": ["s pass", "foreign workforce"],
-    "wp": ["work permit", "foreign workforce"],
-    "foreigners": ["foreign workforce", "non-resident population"],
-    "cpi": ["consumer price index"],
-    "inflation": ["consumer price index"],
-    "gdp": ["gross domestic product"],
-    "coe": ["certificate of entitlement"],
-    "pr": ["permanent resident"],
-    "prs": ["permanent resident"],
-    "fertility": ["births and fertility"],
-    "tfr": ["fertility rate"],
-    "jobless": ["unemployment"],
-}
+MEANING_PHRASES = 4
+MEANING_TIMEOUT = 12
 
 SECTORS = {
     "technology": "Information and Communications",
@@ -102,9 +84,7 @@ EDIT_CUES = re.compile(
     re.I,
 )
 
-CROSS_CHECK_DEPTH = 6
 MAX_PLAN = 3
-GOVERNMENT_PROVIDERS = {"datagov", "singstat"}
 MAX_ATTEMPTS = 4
 PROVIDER_ORDER = ("gemini", "groq")
 INTERRUPTED = "The server restarted before this analysis finished. Run it again."

@@ -23,7 +23,7 @@ Further reading:
 | LLMs | Gemini as primary and Groq as fallback, routed through a Bifrost gateway and called with LangChain |
 | Reports | Briefing with insights, citations and a grounding check, exportable as Markdown, JSON or CSV |
 | Frontend | React dashboard with live agent reasoning over WebSocket, charts, dataset quality and history |
-| Retrieval | pgvector index of dataset descriptions with one embedding model (gemini-embedding-2, 768 dimensions) |
+| Retrieval | Data.gov.sg catalogue in Postgres. The chat model turns the question into search phrases. Keyword search, or pgvector once Bifrost has embedded every row |
 
 ## Setup
 
