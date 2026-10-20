@@ -11,6 +11,7 @@ from app.constants import (
     DEFAULT_COOLDOWN,
     EMBED_DIM,
     GEMINI_EMBED_MODEL,
+    GEMINI_PROVIDER,
     GROQ_EMBED_MODEL,
     GROQ_PROVIDER,
     REQUEST_TIMEOUT,
@@ -66,6 +67,10 @@ def query_text(query: str, model: str = GEMINI_EMBED_MODEL) -> str:
     return f"task: search result | query: {query}"
 
 
+def gemini_embedding(model: str) -> bool:
+    return model == GEMINI_PROVIDER or model.endswith(f"/{GEMINI_PROVIDER}")
+
+
 def embeddings_url() -> str:
     base = settings.BIFROST_URL.rstrip("/")
     if base.endswith("/v1"):
@@ -100,8 +105,8 @@ def embed_chunk(
     patient: bool,
 ) -> tuple[list[list[float]], str]:
     global limit_message
-    payload: dict = {"model": model, "input": texts}
-    if model == GEMINI_EMBED_MODEL:
+    payload: dict = {"model": GEMINI_EMBED_MODEL if gemini_embedding(model) else model, "input": texts}
+    if gemini_embedding(model):
         payload["dimensions"] = EMBED_DIM
         payload["fallbacks"] = [GROQ_EMBED_MODEL]
     while True:
@@ -121,7 +126,10 @@ def embed_chunk(
         if len(data) != len(texts):
             raise RuntimeError(f"Gateway returned {len(data)} vectors for {len(texts)} texts")
         limit_message = ""
-        return [item["embedding"] for item in data], str(body.get("model") or model)
+        returned = str(body.get("model") or payload["model"])
+        if gemini_embedding(model) and gemini_embedding(returned):
+            returned = model
+        return [item["embedding"] for item in data], returned
 
 
 def retry_seconds(response: httpx.Response) -> float | None:

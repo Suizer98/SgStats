@@ -341,6 +341,12 @@ def test_request_time_embedding_fails_fast_on_rate_limit(monkeypatch: pytest.Mon
     monkeypatch.setattr(embed, "blocked_until", 0.0)
     monkeypatch.setattr(embed.time, "sleep", lambda seconds: pytest.fail("request path must not sleep"))
 
+    class Ok:
+        status_code = 200
+
+        def json(self):
+            return {"model": "gemini-embedding-2", "data": [{"index": 0, "embedding": [0.0] * embed.EMBED_DIM}]}
+
     class Limited:
         status_code = 429
         headers = {"retry-after": "30"}
@@ -359,16 +365,20 @@ def test_request_time_embedding_fails_fast_on_rate_limit(monkeypatch: pytest.Mon
         def post(self, url, headers, json):
             assert url == "http://bifrost:8080/v1/embeddings"
             assert json["model"] == "gemini/gemini-embedding-2"
+            assert json["dimensions"] == 768
             assert json["fallbacks"] == ["groq/nomic-embed-text-v1.5"]
-            calls.append(url)
-            return Limited()
+            calls.append(json)
+            return Ok() if len(calls) == 1 else Limited()
 
     monkeypatch.setattr(embed.httpx, "Client", FakeClient)
+    matrix, used = embed.embed_texts(["employment pass"], "gemini-embedding-2")
+    assert used == "gemini-embedding-2"
+    assert matrix.shape == (1, 768)
     with pytest.raises(embed.QuotaError):
         embed.embed_texts(["employment"])
     with pytest.raises(embed.QuotaError):
         embed.embed_texts(["employment"])
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_grounding_checks_figures_against_facts():
